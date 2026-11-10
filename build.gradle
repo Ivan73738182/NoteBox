@@ -18,5 +18,5 @@ allprojects {
 }
 
 task clean(type: Delete) {
-    delete rootBuildDir
+    delete rootProject.buildDir
 }
