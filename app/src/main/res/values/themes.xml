@@ -1,0 +1,18 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Базовая тема приложения -->
+    <style name="Theme.NoteBox" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Основные цвета, как на фото -->
+        <item name="colorPrimary">#121212</item>
+        <item name="colorPrimaryVariant">#1F1F1F</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        
+        <!-- Цвет акцента для FAB -->
+        <item name="colorSecondary">#FFB74D</item> <!-- Светло-оранжевый -->
+        <item name="colorSecondaryVariant">#FFA726</item>
+        <item name="colorOnSecondary">#000000</item>
+        
+        <!-- Цвет фона -->
+        <item name="android:windowBackground">#121212</item>
+        <item name="android:statusBarColor">#121212</item>
+    </style>
+</resources>
