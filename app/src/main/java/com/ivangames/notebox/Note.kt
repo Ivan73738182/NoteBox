@@ -14,7 +14,8 @@ data class Note(
     val tag: String = "",
     val wordCount: Int = 0,
     val isDeleted: Boolean = false,
-    val reminderTime: Long = 0L // 0 означает, что напоминания нет
+    val reminderTime: Long = 0L,
+    val color: String = "" // НОВОЕ: цвет карточки
 )
 
 class NoteRepository(context: Context) {
@@ -36,7 +37,8 @@ class NoteRepository(context: Context) {
                     tag = obj.optString("tag", ""),
                     wordCount = obj.optInt("wordCount", 0),
                     isDeleted = obj.optBoolean("isDeleted", false),
-                    reminderTime = obj.optLong("reminderTime", 0L)
+                    reminderTime = obj.optLong("reminderTime", 0L),
+                    color = obj.optString("color", "")
                 )
             )
         }
@@ -47,15 +49,9 @@ class NoteRepository(context: Context) {
         val jsonArray = JSONArray()
         notes.forEach { note ->
             val obj = JSONObject().apply {
-                put("id", note.id)
-                put("title", note.title)
-                put("content", note.content)
-                put("timestamp", note.timestamp)
-                put("isPinned", note.isPinned)
-                put("tag", note.tag)
-                put("wordCount", note.wordCount)
-                put("isDeleted", note.isDeleted)
-                put("reminderTime", note.reminderTime)
+                put("id", note.id); put("title", note.title); put("content", note.content); put("timestamp", note.timestamp)
+                put("isPinned", note.isPinned); put("tag", note.tag); put("wordCount", note.wordCount)
+                put("isDeleted", note.isDeleted); put("reminderTime", note.reminderTime); put("color", note.color)
             }
             jsonArray.put(obj)
         }
@@ -63,12 +59,11 @@ class NoteRepository(context: Context) {
     }
 
     fun getTotalWordsCreated(): Int = prefs.getInt("total_words_created", 0)
-    fun addWordsCreated(count: Int) {
-        prefs.edit().putInt("total_words_created", getTotalWordsCreated() + count).apply()
-    }
-
+    fun addWordsCreated(count: Int) { prefs.edit().putInt("total_words_created", getTotalWordsCreated() + count).apply() }
     fun getThemeMode(): Int = prefs.getInt("theme_mode", 0)
-    fun saveThemeMode(mode: Int) {
-        prefs.edit().putInt("theme_mode", mode).apply()
-    }
+    fun saveThemeMode(mode: Int) { prefs.edit().putInt("theme_mode", mode).apply() }
+    
+    // Настройка вида (false - список, true - сетка)
+    fun isGridView(): Boolean = prefs.getBoolean("is_grid_view", false)
+    fun saveGridView(isGrid: Boolean) { prefs.edit().putBoolean("is_grid_view", isGrid).apply() }
 }

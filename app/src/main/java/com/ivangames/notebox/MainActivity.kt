@@ -20,12 +20,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -33,6 +35,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -50,11 +53,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             var themeMode by remember { mutableIntStateOf(repository.getThemeMode()) }
             val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-            LaunchedEffect(Unit) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                }
-            }
+            LaunchedEffect(Unit) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
             NoteBoxTheme(themeMode) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     NoteBoxApp(repository = repository, themeMode = themeMode, onThemeChange = { m -> themeMode = m; repository.saveThemeMode(m) })
@@ -75,7 +74,9 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     var showStatsDialog by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
     var showTrashScreen by remember { mutableStateOf(false) }
-    var longPressedNote by remember { mutableStateOf<Note?>(null) } // Для меню долгого нажатия
+    var longPressedNote by remember { mutableStateOf<Note?>(null) }
+    var isGridView by remember { mutableStateOf(repository.isGridView()) } // Настройка сетки
+    
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -87,7 +88,13 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     }
 
     if (showTrashScreen) {
-        TrashScreen(notes = notes, onRestore = { n -> notes = notes.map { if (it.id == n.id) it.copy(isDeleted = false) else it }; repository.saveNotes(notes) }, onDeletePermanently = { n -> notes = notes.filter { it.id != n.id }; repository.saveNotes(notes) }, onBack = { showTrashScreen = false })
+        TrashScreen(
+            notes = notes,
+            onRestore = { n -> notes = notes.map { if (it.id == n.id) it.copy(isDeleted = false) else it }; repository.saveNotes(notes) },
+            onDeletePermanently = { n -> notes = notes.filter { it.id != n.id }; repository.saveNotes(notes) },
+            onClearAll = { notes = notes.filter { !it.isDeleted }; repository.saveNotes(notes) },
+            onBack = { showTrashScreen = false }
+        )
     } else if (currentEditingNote == null) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -99,6 +106,11 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                         Box {
                             IconButton(onClick = { showSettingsMenu = true }) { Icon(Icons.Default.MoreVert, "Меню") }
                             DropdownMenu(expanded = showSettingsMenu, onDismissRequest = { showSettingsMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(if (isGridView) "Вид: Список" else "Вид: Сетка") },
+                                    leadingIcon = { Icon(if (isGridView) Icons.Default.List else Icons.Default.GridView, null) },
+                                    onClick = { isGridView = !isGridView; repository.saveGridView(isGridView); showSettingsMenu = false }
+                                )
                                 DropdownMenuItem(text = { Text("Корзина") }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { showTrashScreen = true; showSettingsMenu = false })
                                 DropdownMenuItem(text = { Text("Экспорт заметок") }, leadingIcon = { Icon(Icons.Default.Share, null) }, onClick = { exportNotes(context, activeNotes); showSettingsMenu = false })
                                 Divider()
@@ -113,12 +125,15 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             },
             floatingActionButton = {
                 FloatingActionButton(onClick = { currentEditingNote = Note(title = "", content = "") }, containerColor = MaterialTheme.colorScheme.primary) {
-                    Icon(Icons.Default.Add, "Создать заметку")
+                    Icon(Icons.Default.Add, "Создать")
                 }
             }
         ) { padding ->
             Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-                OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, placeholder = { Text("Поиск заметок...") }, leadingIcon = { Icon(Icons.Default.Search, null) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), singleLine = true)
+                OutlinedTextField(
+                    value = searchQuery, onValueChange = { searchQuery = it }, placeholder = { Text("Поиск заметок...") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), singleLine = true
+                )
                 
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("Все", "Работа", "Личное", "Идеи").forEach { tag ->
@@ -135,28 +150,33 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                         Text("Нажми +, чтобы создать заметку", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                     }
                 } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(filteredNotes, key = { it.id }) { note ->
-                            var visible by remember { mutableStateOf(false) }
-                            LaunchedEffect(Unit) { delay(50); visible = true }
-                            AnimatedVisibility(visible = visible, enter = fadeIn() + slideInVertically { it / 2 }) {
-                                SwipeToDeleteContainer(onDelete = {
-                                    notes = notes.map { if (it.id == note.id) it.copy(isDeleted = true) else it }
-                                    repository.saveNotes(notes)
-                                    scope.launch {
-                                        val res = snackbarHostState.showSnackbar("В корзине", "Отменить", duration = SnackbarDuration.Short)
-                                        if (res == SnackbarResult.ActionPerformed) {
-                                            notes = notes.map { if (it.id == note.id) it.copy(isDeleted = false) else it }
-                                            repository.saveNotes(notes)
+                    if (isGridView) {
+                        // РЕЖИМ СЕТКИ (2 колонки)
+                        LazyVerticalGrid(columns = GridCells.Fixed(2), contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(filteredNotes, key = { it.id }) { note ->
+                                NoteCard(note = note, onPin = { notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }; repository.saveNotes(notes) }, onClick = { currentEditingNote = note }, onLongClick = { longPressedNote = note }, isGrid = true)
+                            }
+                        }
+                    } else {
+                        // РЕЖИМ СПИСКА (как раньше)
+                        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(filteredNotes, key = { it.id }) { note ->
+                                var visible by remember { mutableStateOf(false) }
+                                LaunchedEffect(Unit) { delay(50); visible = true }
+                                AnimatedVisibility(visible = visible, enter = fadeIn()) {
+                                    SwipeToDeleteContainer(onDelete = {
+                                        notes = notes.map { if (it.id == note.id) it.copy(isDeleted = true) else it }
+                                        repository.saveNotes(notes)
+                                        scope.launch {
+                                            val res = snackbarHostState.showSnackbar("В корзине", "Отменить", duration = SnackbarDuration.Short)
+                                            if (res == SnackbarResult.ActionPerformed) {
+                                                notes = notes.map { if (it.id == note.id) it.copy(isDeleted = false) else it }
+                                                repository.saveNotes(notes)
+                                            }
                                         }
+                                    }) {
+                                        NoteCard(note = note, onPin = { notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }; repository.saveNotes(notes) }, onClick = { currentEditingNote = note }, onLongClick = { longPressedNote = note }, isGrid = false)
                                     }
-                                }) {
-                                    NoteCard(
-                                        note = note,
-                                        onPin = { notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }; repository.saveNotes(notes) },
-                                        onClick = { currentEditingNote = note },
-                                        onLongClick = { longPressedNote = note } // Вызов меню долгого нажатия
-                                    )
                                 }
                             }
                         }
@@ -165,7 +185,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             }
         }
         
-        // Меню долгого нажатия
         if (longPressedNote != null) {
             AlertDialog(
                 onDismissRequest = { longPressedNote = null },
@@ -175,7 +194,7 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                     TextButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Note", longPressedNote!!.content))
-                        Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
                         longPressedNote = null
                     }) { Text("Копировать") }
                 },
@@ -197,7 +216,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                 }
             )
         }
-
         if (showStatsDialog) StatsDialog(repository, activeNotes.size, onDismiss = { showStatsDialog = false })
     } else {
         NoteEditScreen(
@@ -219,35 +237,27 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
 
 fun setAlarm(context: Context, note: Note, timeInMillis: Long) {
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-    val intent = Intent(context, AlarmReceiver::class.java).apply {
-        putExtra("note_title", note.title.ifBlank { "Без названия" }); putExtra("note_content", note.content); putExtra("note_id", note.id.hashCode())
-    }
+    val intent = Intent(context, AlarmReceiver::class.java).apply { putExtra("note_title", note.title.ifBlank { "Без названия" }); putExtra("note_content", note.content); putExtra("note_id", note.id.hashCode()) }
     val pendingIntent = PendingIntent.getBroadcast(context, note.id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (alarmManager.canScheduleExactAlarms()) alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
-            else { context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply { data = Uri.parse("package:${context.packageName}") }); Toast.makeText(context, "Разрешите точные будильники", Toast.LENGTH_LONG).show() }
+            else { context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply { data = Uri.parse("package:${context.packageName}") }); Toast.makeText(context, "Разрешите будильники", Toast.LENGTH_LONG).show() }
         } else alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
-    } catch (e: SecurityException) { Toast.makeText(context, "Ошибка: нет разрешения", Toast.LENGTH_SHORT).show() }
+    } catch (e: SecurityException) { }
 }
 
 fun cancelAlarm(context: Context, note: Note) {
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-    val intent = Intent(context, AlarmReceiver::class.java)
-    val pendingIntent = PendingIntent.getBroadcast(context, note.id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    val pendingIntent = PendingIntent.getBroadcast(context, note.id.hashCode(), Intent(context, AlarmReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     alarmManager.cancel(pendingIntent)
 }
 
 fun exportNotes(context: Context, notes: List<Note>) {
     if (notes.isEmpty()) { Toast.makeText(context, "Нет заметок", Toast.LENGTH_SHORT).show(); return }
     val text = StringBuilder()
-    notes.forEach { note ->
-        text.append("Заголовок: ${note.title}\n")
-        if (note.tag.isNotBlank()) text.append("Тег: #${note.tag}\n")
-        text.append("Дата: ${SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(note.timestamp))}\n")
-        text.append("Текст:\n${note.content}\n\n-------------------\n\n")
-    }
-    context.startActivity(Intent.createChooser(Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, text.toString()); type = "text/plain" }, "Поделиться заметками"))
+    notes.forEach { note -> text.append("Заголовок: ${note.title}\nДата: ${SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(note.timestamp))}\nТекст:\n${note.content}\n\n---\n\n") }
+    context.startActivity(Intent.createChooser(Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, text.toString()); type = "text/plain" }, "Поделиться"))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -259,38 +269,35 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
     var isPinned by remember(note) { mutableStateOf(note.isPinned) }
     var tag by remember(note) { mutableStateOf(note.tag) }
     var reminderTime by remember(note) { mutableStateOf(note.reminderTime) }
+    var cardColor by remember(note) { mutableStateOf(note.color) } // Цвет
     var showTagMenu by remember { mutableStateOf(false) }
+    var showColorMenu by remember { mutableStateOf(false) }
 
     val wordCount = remember(content) { content.split("\\s+".toRegex()).filter { it.isNotBlank() }.size }
     val charCount = remember(content) { content.length }
 
-    LaunchedEffect(title, content, isPinned, tag, reminderTime) {
+    LaunchedEffect(title, content, isPinned, tag, reminderTime, cardColor) {
         if (title.isNotBlank() || content.isNotBlank()) {
             delay(2000)
-            onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime))
+            onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime, color = cardColor))
         }
     }
 
-    // ЛАУНЧЕР ДЛЯ ГОЛОСОВОГО ВВОДА
     val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-            if (!spokenText.isNullOrBlank()) {
-                content = if (content.isBlank()) spokenText else "$content $spokenText"
-            }
+            if (!spokenText.isNullOrBlank()) { content = if (content.isBlank()) spokenText else "$content $spokenText" }
         }
     }
 
     fun showDateTimePicker() {
-        val calendar = Calendar.getInstance()
-        if (reminderTime > 0) calendar.timeInMillis = reminderTime
+        val calendar = Calendar.getInstance(); if (reminderTime > 0) calendar.timeInMillis = reminderTime
         val datePicker = DatePickerDialog(context, { _, year, month, day ->
             calendar.set(year, month, day)
             val timePicker = TimePickerDialog(context, { _, hour, minute ->
                 calendar.set(Calendar.HOUR_OF_DAY, hour); calendar.set(Calendar.MINUTE, minute); calendar.set(Calendar.SECOND, 0)
                 reminderTime = calendar.timeInMillis
                 setAlarm(context, note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime), reminderTime)
-                Toast.makeText(context, "Напоминание установлено", Toast.LENGTH_SHORT).show()
             }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), true)
             timePicker.show()
         }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH))
@@ -301,9 +308,22 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Редактор") },
-                navigationIcon = { IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime)); onCancel() }) { Icon(Icons.Default.ArrowBack, "Назад") } },
+                navigationIcon = { IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime, color = cardColor)); onCancel() }) { Icon(Icons.Default.ArrowBack, "Назад") } },
                 actions = {
                     IconButton(onClick = { isPinned = !isPinned }) { Icon(Icons.Default.PushPin, "Закрепить", tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    // Палитра
+                    Box {
+                        IconButton(onClick = { showColorMenu = true }) { Icon(Icons.Default.Palette, "Цвет") }
+                        DropdownMenu(expanded = showColorMenu, onDismissRequest = { showColorMenu = false }) {
+                            listOf("" to "Стандартный", "#FFCDD2" to "Красный", "#F8BBD0" to "Розовый", "#FFF9C4" to "Желтый", "#C8E6C9" to "Зеленый", "#BBDEFB" to "Синий").forEach { (hex, name) ->
+                                DropdownMenuItem(
+                                    text = { Text(name) },
+                                    leadingIcon = { Box(modifier = Modifier.size(16.dp).background(if (hex.isEmpty()) MaterialTheme.colorScheme.surface else Color(android.graphics.Color.parseColor(hex)), shape = MaterialTheme.shapes.extraSmall)) },
+                                    onClick = { cardColor = hex; showColorMenu = false }
+                                )
+                            }
+                        }
+                    }
                     Box {
                         IconButton(onClick = { showTagMenu = true }) { Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                         DropdownMenu(expanded = showTagMenu, onDismissRequest = { showTagMenu = false }) {
@@ -311,14 +331,8 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                         }
                     }
                     IconButton(onClick = { showDateTimePicker() }) { Icon(Icons.Default.Notifications, "Напоминание", tint = if (reminderTime > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-                    // КНОПКА КОПИРОВАНИЯ
-                    IconButton(onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Note", content))
-                        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
-                    }) { Icon(Icons.Default.ContentCopy, "Копировать текст") }
-                    
-                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime)); onCancel() }) { Icon(Icons.Default.Check, "Готово") }
+                    IconButton(onClick = { val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; clipboard.setPrimaryClip(ClipData.newPlainText("Note", content)); Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Default.ContentCopy, "Копировать") }
+                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime, color = cardColor)); onCancel() }) { Icon(Icons.Default.Check, "Готово") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             )
@@ -327,41 +341,22 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Заголовок") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             Spacer(modifier = Modifier.height(12.dp))
-            
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                OutlinedTextField(
-                    value = content, onValueChange = { content = it },
-                    label = { Text("Текст заметки...") },
-                    modifier = Modifier.fillMaxSize()
-                )
-                // КНОПКА МИКРОФОНА (внутри поля текста)
-                FloatingActionButton(
-                    onClick = {
-                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
-                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Говорите...")
-                        }
-                        try { speechLauncher.launch(intent) } 
-                        catch (e: Exception) { Toast.makeText(context, "Голосовой ввод не поддерживается", Toast.LENGTH_SHORT).show() }
-                    },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                    containerColor = MaterialTheme.colorScheme.primary
-                ) {
-                    Icon(Icons.Default.Mic, "Голосовой ввод")
-                }
+                OutlinedTextField(value = content, onValueChange = { content = it }, label = { Text("Текст заметки...") }, modifier = Modifier.fillMaxSize())
+                FloatingActionButton(onClick = {
+                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply { putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU") }
+                    try { speechLauncher.launch(intent) } catch (e: Exception) { Toast.makeText(context, "Нет голосового ввода", Toast.LENGTH_SHORT).show() }
+                }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Mic, "Голос") }
             }
-
             if (reminderTime > 0) {
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(text = "⏰ ${SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(reminderTime))}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                     TextButton(onClick = { cancelAlarm(context, note); reminderTime = 0 }) { Text("Отменить", color = MaterialTheme.colorScheme.error) }
                 }
             }
-            
             Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = "$wordCount слов, $charCount символов", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(text = "Автосохранение активно", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("$wordCount слов, $charCount симв.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Автосохранение", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -369,30 +364,36 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NoteCard(note: Note, onPin: () -> Unit, onClick: () -> Unit, onLongClick: () -> Unit) {
+fun NoteCard(note: Note, onPin: () -> Unit, onClick: () -> Unit, onLongClick: () -> Unit, isGrid: Boolean = false) {
+    val bgColor = if (note.color.isNotEmpty()) Color(android.graphics.Color.parseColor(note.color)) else MaterialTheme.colorScheme.surface
+    val textColor = if (note.color.isNotEmpty()) Color.Black else MaterialTheme.colorScheme.onSurface
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            ),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        colors = CardDefaults.cardColors(containerColor = bgColor)
     ) {
-        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (note.isPinned) { Icon(Icons.Default.PushPin, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary); Spacer(modifier = Modifier.width(4.dp)) }
-                    Text(note.title.ifBlank { "Без названия" }, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (note.isPinned) { Icon(Icons.Default.PushPin, null, modifier = Modifier.size(16.dp), tint = if (note.color.isNotEmpty()) Color.Black else MaterialTheme.colorScheme.primary); Spacer(modifier = Modifier.width(4.dp)) }
+                        Text(note.title.ifBlank { "Без названия" }, fontWeight = FontWeight.Bold, color = textColor, maxLines = if (isGrid) 2 else 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (note.content.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(note.content, maxLines = if (isGrid) 4 else 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = textColor.copy(alpha = 0.8f))
+                    }
                 }
-                if (note.content.isNotBlank()) Text(note.content, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                Row(modifier = Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(SimpleDateFormat("dd.MM.yy HH:mm", Locale.getDefault()).format(Date(note.timestamp)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                    if (note.tag.isNotBlank()) { Spacer(modifier = Modifier.width(8.dp)); Text("#${note.tag}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
-                    if (note.reminderTime > 0) { Spacer(modifier = Modifier.width(8.dp)); Icon(Icons.Default.Notifications, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary) }
+                if (!isGrid) {
+                    IconButton(onClick = onPin) { Icon(Icons.Default.PushPin, "Закрепить", tint = if (note.isPinned) (if (note.color.isNotEmpty()) Color.Black else MaterialTheme.colorScheme.primary) else textColor.copy(alpha = 0.5f)) }
                 }
             }
-            IconButton(onClick = onPin) { Icon(Icons.Default.PushPin, "Закрепить", tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline) }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(SimpleDateFormat("dd.MM.yy", Locale.getDefault()).format(Date(note.timestamp)), style = MaterialTheme.typography.labelSmall, color = textColor.copy(alpha = 0.5f))
+                if (note.tag.isNotBlank()) { Spacer(modifier = Modifier.width(8.dp)); Text("#${note.tag}", style = MaterialTheme.typography.labelSmall, color = textColor) }
+                if (note.reminderTime > 0) { Spacer(modifier = Modifier.width(8.dp)); Icon(Icons.Default.Notifications, null, modifier = Modifier.size(12.dp), tint = textColor) }
+            }
         }
     }
 }
@@ -408,9 +409,16 @@ fun SwipeToDeleteContainer(onDelete: () -> Unit, content: @Composable () -> Unit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TrashScreen(notes: List<Note>, onRestore: (Note) -> Unit, onDeletePermanently: (Note) -> Unit, onBack: () -> Unit) {
+fun TrashScreen(notes: List<Note>, onRestore: (Note) -> Unit, onDeletePermanently: (Note) -> Unit, onClearAll: () -> Unit, onBack: () -> Unit) {
     val trashNotes = notes.filter { it.isDeleted }
-    Scaffold(topBar = { TopAppBar(title = { Text("Корзина") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Назад") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) }) { padding ->
+    Scaffold(topBar = { 
+        TopAppBar(
+            title = { Text("Корзина") }, 
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Назад") } },
+            actions = { if (trashNotes.isNotEmpty()) TextButton(onClick = onClearAll) { Text("Очистить", color = MaterialTheme.colorScheme.error) } },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) 
+    }) { padding ->
         if (trashNotes.isEmpty()) Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text("Корзина пуста") }
         else LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(trashNotes, key = { it.id }) { note ->
@@ -428,12 +436,6 @@ fun TrashScreen(notes: List<Note>, onRestore: (Note) -> Unit, onDeletePermanentl
 fun StatsDialog(repository: NoteRepository, totalNotes: Int, onDismiss: () -> Unit) {
     val totalWords = repository.getTotalWordsCreated()
     AlertDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }, title = { Text("Статистика") }, text = {
-        Column {
-            Text("📝 Всего заметок: $totalNotes")
-            Text("✍️ Всего слов: $totalWords")
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(if (totalNotes >= 1) "✅ Первая заметка" else "⬜ Первая заметка")
-            Text(if (totalWords >= 100) "✅ 100 слов" else "⬜ 100 слов")
-        }
+        Column { Text("📝 Заметок: $totalNotes"); Text("✍️ Слов: $totalWords") }
     })
 }
