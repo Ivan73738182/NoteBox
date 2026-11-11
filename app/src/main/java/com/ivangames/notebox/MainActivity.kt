@@ -4,12 +4,15 @@ import android.app.AlarmManager
 import android.app.DatePickerDialog
 import android.app.PendingIntent
 import android.app.TimePickerDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -18,8 +21,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -71,6 +75,7 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     var showStatsDialog by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
     var showTrashScreen by remember { mutableStateOf(false) }
+    var longPressedNote by remember { mutableStateOf<Note?>(null) } // Для меню долгого нажатия
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -123,7 +128,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (filteredNotes.isEmpty()) {
-                    // КРАСИВОЕ ПУСТОЕ СОСТОЯНИЕ
                     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         Icon(Icons.Default.Book, null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                         Spacer(modifier = Modifier.height(16.dp))
@@ -133,7 +137,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(filteredNotes, key = { it.id }) { note ->
-                            // Плавное появление
                             var visible by remember { mutableStateOf(false) }
                             LaunchedEffect(Unit) { delay(50); visible = true }
                             AnimatedVisibility(visible = visible, enter = fadeIn() + slideInVertically { it / 2 }) {
@@ -148,7 +151,12 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                                         }
                                     }
                                 }) {
-                                    NoteCard(note = note, onPin = { notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }; repository.saveNotes(notes) }, onClick = { currentEditingNote = note })
+                                    NoteCard(
+                                        note = note,
+                                        onPin = { notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }; repository.saveNotes(notes) },
+                                        onClick = { currentEditingNote = note },
+                                        onLongClick = { longPressedNote = note } // Вызов меню долгого нажатия
+                                    )
                                 }
                             }
                         }
@@ -156,6 +164,40 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                 }
             }
         }
+        
+        // Меню долгого нажатия
+        if (longPressedNote != null) {
+            AlertDialog(
+                onDismissRequest = { longPressedNote = null },
+                title = { Text(longPressedNote!!.title.ifBlank { "Без названия" }) },
+                text = { Text("Что сделать с заметкой?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Note", longPressedNote!!.content))
+                        Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
+                        longPressedNote = null
+                    }) { Text("Копировать") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            val n = longPressedNote!!
+                            notes = notes.map { if (it.id == n.id) it.copy(isPinned = !it.isPinned) else it }
+                            repository.saveNotes(notes)
+                            longPressedNote = null
+                        }) { Text(if (longPressedNote!!.isPinned) "Открепить" else "Закрепить") }
+                        TextButton(onClick = {
+                            val n = longPressedNote!!
+                            notes = notes.map { if (it.id == n.id) it.copy(isDeleted = true) else it }
+                            repository.saveNotes(notes)
+                            longPressedNote = null
+                        }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            )
+        }
+
         if (showStatsDialog) StatsDialog(repository, activeNotes.size, onDismiss = { showStatsDialog = false })
     } else {
         NoteEditScreen(
@@ -219,7 +261,6 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
     var reminderTime by remember(note) { mutableStateOf(note.reminderTime) }
     var showTagMenu by remember { mutableStateOf(false) }
 
-    // Счётчик символов и слов
     val wordCount = remember(content) { content.split("\\s+".toRegex()).filter { it.isNotBlank() }.size }
     val charCount = remember(content) { content.length }
 
@@ -227,6 +268,16 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
         if (title.isNotBlank() || content.isNotBlank()) {
             delay(2000)
             onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime))
+        }
+    }
+
+    // ЛАУНЧЕР ДЛЯ ГОЛОСОВОГО ВВОДА
+    val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                content = if (content.isBlank()) spokenText else "$content $spokenText"
+            }
         }
     }
 
@@ -260,6 +311,13 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                         }
                     }
                     IconButton(onClick = { showDateTimePicker() }) { Icon(Icons.Default.Notifications, "Напоминание", tint = if (reminderTime > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    // КНОПКА КОПИРОВАНИЯ
+                    IconButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Note", content))
+                        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                    }) { Icon(Icons.Default.ContentCopy, "Копировать текст") }
+                    
                     IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime)); onCancel() }) { Icon(Icons.Default.Check, "Готово") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -269,8 +327,31 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Заголовок") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(value = content, onValueChange = { content = it }, label = { Text("Текст заметки...") }, modifier = Modifier.fillMaxWidth().weight(1f))
             
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                OutlinedTextField(
+                    value = content, onValueChange = { content = it },
+                    label = { Text("Текст заметки...") },
+                    modifier = Modifier.fillMaxSize()
+                )
+                // КНОПКА МИКРОФОНА (внутри поля текста)
+                FloatingActionButton(
+                    onClick = {
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Говорите...")
+                        }
+                        try { speechLauncher.launch(intent) } 
+                        catch (e: Exception) { Toast.makeText(context, "Голосовой ввод не поддерживается", Toast.LENGTH_SHORT).show() }
+                    },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Mic, "Голосовой ввод")
+                }
+            }
+
             if (reminderTime > 0) {
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(text = "⏰ ${SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(reminderTime))}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
@@ -278,7 +359,6 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                 }
             }
             
-            // СЧЁТЧИК
             Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(text = "$wordCount слов, $charCount символов", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(text = "Автосохранение активно", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -287,9 +367,18 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NoteCard(note: Note, onPin: () -> Unit, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable { onClick() }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+fun NoteCard(note: Note, onPin: () -> Unit, onClick: () -> Unit, onLongClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
