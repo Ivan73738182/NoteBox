@@ -97,7 +97,7 @@ fun LockScreen(repository: NoteRepository, onUnlock: () -> Unit) {
             shape = RoundedCornerShape(16.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = { if (inputPin == correctPin) onUnlock() else inputPin = "" }, shape = RoundedCornerShape(16.dp)) { Text("Войти") }
+        Button(onClick = { if (inputPin == correctPin) onUnlock() else inputPin = "" }) { Text("Войти") }
     }
 }
 
@@ -190,7 +190,7 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                 
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("Все", "Работа", "Личное", "Идеи").forEach { tag -> 
-                        FilterChip(selected = selectedTag == tag, onClick = { selectedTag = tag }, label = { Text(tag) }, shape = RoundedCornerShape(16.dp)) 
+                        FilterChip(selected = selectedTag == tag, onClick = { selectedTag = tag }, label = { Text(tag) }) 
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -261,7 +261,7 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             AlertDialog(
                 onDismissRequest = { showPinDialog = false },
                 title = { Text("Установить PIN-код") },
-                text = { OutlinedTextField(value = newPin, onValueChange = { if (it.length <= 4) newPin = it }, label = { Text("4 цифры (пусто = удалить)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), shape = RoundedCornerShape(16.dp)) },
+                text = { OutlinedTextField(value = newPin, onValueChange = { if (it.length <= 4) newPin = it }, label = { Text("4 цифры (пусто = удалить)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)) },
                 shape = RoundedCornerShape(24.dp),
                 confirmButton = { TextButton(onClick = { repository.savePinCode(newPin); showPinDialog = false }) { Text("Сохранить") } }
             )
@@ -380,7 +380,7 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                     IconButton(onClick = { isPinned = !isPinned }) { Icon(Icons.Default.PushPin, "Закрепить", tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                     Box {
                         IconButton(onClick = { showColorMenu = true }) { Icon(Icons.Default.Palette, "Цвет") }
-                        DropdownMenu(expanded = showColorMenu, onDismissRequest = { showColorMenu = false }, shape = RoundedCornerShape(16.dp)) {
+                        DropdownMenu(expanded = showColorMenu, onDismissRequest = { showColorMenu = false }) {
                             listOf("" to "Стандарт", "#FFCDD2" to "Красный", "#F8BBD0" to "Розовый", "#FFF9C4" to "Желтый", "#C8E6C9" to "Зеленый", "#BBDEFB" to "Синий").forEach { (hex, name) ->
                                 DropdownMenuItem(text = { Text(name) }, leadingIcon = { Box(modifier = Modifier.size(16.dp).clip(RoundedCornerShape(8.dp)).background(if (hex.isEmpty()) MaterialTheme.colorScheme.surface else Color(android.graphics.Color.parseColor(hex)))) }, onClick = { cardColor = hex; showColorMenu = false })
                             }
@@ -388,7 +388,7 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                     }
                     Box {
                         IconButton(onClick = { showTagMenu = true }) { Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-                        DropdownMenu(expanded = showTagMenu, onDismissRequest = { showTagMenu = false }, shape = RoundedCornerShape(16.dp)) {
+                        DropdownMenu(expanded = showTagMenu, onDismissRequest = { showTagMenu = false }) {
                             listOf("", "Работа", "Личное", "Идеи").forEach { t -> DropdownMenuItem(text = { Text(if (t.isBlank()) "Без тега" else t) }, onClick = { tag = t; showTagMenu = false }) }
                         }
                     }
@@ -401,7 +401,7 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Заголовок") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(16.dp))
+            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Заголовок") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             Spacer(modifier = Modifier.height(12.dp))
             
             if (isChecklist) {
@@ -422,7 +422,7 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = "", onValueChange = { if (it.isNotBlank()) content = content + "\n[ ] $it" },
-                        placeholder = { Text("Добавить пункт...") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)
+                        placeholder = { Text("Добавить пункт...") }, modifier = Modifier.fillMaxWidth()
                     )
                 }
             } else {
@@ -437,7 +437,7 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                     FloatingActionButton(onClick = {
                         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply { putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU") }
                         try { speechLauncher.launch(intent) } catch (e: Exception) { Toast.makeText(context, "Нет голосового ввода", Toast.LENGTH_SHORT).show() }
-                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp), containerColor = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(16.dp)) { Icon(Icons.Default.Mic, "Голос") }
+                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Mic, "Голос") }
                 }
             }
             
