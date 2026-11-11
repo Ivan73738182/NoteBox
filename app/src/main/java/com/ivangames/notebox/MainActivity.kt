@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -274,7 +273,7 @@ fun NoteEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (note.title.isEmpty() && note.content.isEmpty()) "Новая заметка" else "Редактирование") },
+                title = { Text("Редактор") }, // Изменили текст
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
                         Icon(Icons.Default.ArrowBack, "Назад")
@@ -287,23 +286,31 @@ fun NoteEditScreen(
                             tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = { showTagMenu = true }) {
-                        Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    
+                    // Оборачиваем в Box, чтобы меню выпадало ровно под кнопкой
+                    Box {
+                        IconButton(onClick = { showTagMenu = true }) {
+                            Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        DropdownMenu(
+                            expanded = showTagMenu,
+                            onDismissRequest = { showTagMenu = false }
+                        ) {
+                            listOf("", "Работа", "Личное", "Идеи").forEach { t ->
+                                DropdownMenuItem(
+                                    text = { Text(if (t.isBlank()) "Без тега" else t) },
+                                    onClick = { tag = t; showTagMenu = false }
+                                )
+                            }
+                        }
                     }
+
                     IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag)) }) {
                         Icon(Icons.Default.Check, "Сохранить")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             )
-            DropdownMenu(expanded = showTagMenu, onDismissRequest = { showTagMenu = false }) {
-                listOf("", "Работа", "Личное", "Идеи").forEach { t ->
-                    DropdownMenuItem(
-                        text = { Text(if (t.isBlank()) "Без тега" else t) },
-                        onClick = { tag = t; showTagMenu = false }
-                    )
-                }
-            }
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
