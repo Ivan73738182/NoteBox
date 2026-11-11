@@ -15,7 +15,8 @@ data class Note(
     val wordCount: Int = 0,
     val isDeleted: Boolean = false,
     val reminderTime: Long = 0L,
-    val color: String = "" // НОВОЕ: цвет карточки
+    val color: String = "",
+    val isChecklist: Boolean = false // НОВОЕ: обычный текст или чек-лист
 )
 
 class NoteRepository(context: Context) {
@@ -38,7 +39,8 @@ class NoteRepository(context: Context) {
                     wordCount = obj.optInt("wordCount", 0),
                     isDeleted = obj.optBoolean("isDeleted", false),
                     reminderTime = obj.optLong("reminderTime", 0L),
-                    color = obj.optString("color", "")
+                    color = obj.optString("color", ""),
+                    isChecklist = obj.optBoolean("isChecklist", false)
                 )
             )
         }
@@ -52,6 +54,7 @@ class NoteRepository(context: Context) {
                 put("id", note.id); put("title", note.title); put("content", note.content); put("timestamp", note.timestamp)
                 put("isPinned", note.isPinned); put("tag", note.tag); put("wordCount", note.wordCount)
                 put("isDeleted", note.isDeleted); put("reminderTime", note.reminderTime); put("color", note.color)
+                put("isChecklist", note.isChecklist)
             }
             jsonArray.put(obj)
         }
@@ -62,8 +65,13 @@ class NoteRepository(context: Context) {
     fun addWordsCreated(count: Int) { prefs.edit().putInt("total_words_created", getTotalWordsCreated() + count).apply() }
     fun getThemeMode(): Int = prefs.getInt("theme_mode", 0)
     fun saveThemeMode(mode: Int) { prefs.edit().putInt("theme_mode", mode).apply() }
-    
-    // Настройка вида (false - список, true - сетка)
     fun isGridView(): Boolean = prefs.getBoolean("is_grid_view", false)
     fun saveGridView(isGrid: Boolean) { prefs.edit().putBoolean("is_grid_view", isGrid).apply() }
+
+    // НОВЫЕ НАСТРОЙКИ: Пароль и размер шрифта
+    fun getPinCode(): String = prefs.getString("pin_code", "") ?: ""
+    fun savePinCode(pin: String) { prefs.edit().putString("pin_code", pin).apply() }
+    
+    fun getFontScale(): Float = prefs.getFloat("font_scale", 1.0f)
+    fun saveFontScale(scale: Float) { prefs.edit().putFloat("font_scale", scale).apply() }
 }
