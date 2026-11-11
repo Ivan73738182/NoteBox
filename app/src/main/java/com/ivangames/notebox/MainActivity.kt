@@ -117,8 +117,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     val scope = rememberCoroutineScope()
 
     val activeNotes = notes.filter { !it.isDeleted }
-    
-    // ЛОГИКА СОРТИРОВКИ
     val sortedNotes = remember(activeNotes, sortMode) {
         when (sortMode) {
             1 -> activeNotes.sortedWith(compareByDescending<Note> { it.isPinned }.thenBy { it.timestamp })
@@ -133,8 +131,9 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
         matchesSearch && matchesTag
     }
 
+    // МЕНЮ ВЫБОРА ТИПА ЗАМЕТКИ (+)
     if (showAddMenu) {
-        ModalBottomSheet(onDismissRequest = { showAddMenu = false }) {
+        ModalBottomSheet(onDismissRequest = { showAddMenu = false }, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
             Column(modifier = Modifier.padding(16.dp).padding(bottom = 32.dp)) {
                 Text("Создать заметку", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 16.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -155,6 +154,47 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
         }
     }
 
+    // КРАСИВОЕ МЕНЮ ДЛЯ ДОЛГОГО НАЖАТИЯ
+    if (longPressedNote != null) {
+        ModalBottomSheet(onDismissRequest = { longPressedNote = null }, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+            Column(modifier = Modifier.padding(16.dp).padding(bottom = 32.dp)) {
+                Text(longPressedNote!!.title.ifBlank { "Без названия" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                ListItem(
+                    headlineContent = { Text("Копировать текст") },
+                    leadingContent = { Icon(Icons.Default.ContentCopy, null, tint = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.clickable { 
+                        val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cb.setPrimaryClip(ClipData.newPlainText("Note", longPressedNote!!.content))
+                        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                        longPressedNote = null 
+                    }
+                )
+                ListItem(
+                    headlineContent = { Text(if (longPressedNote!!.isPinned) "Открепить" else "Закрепить") },
+                    leadingContent = { Icon(Icons.Default.PushPin, null, tint = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.clickable { 
+                        val n = longPressedNote!!
+                        notes = notes.map { if (it.id == n.id) it.copy(isPinned = !it.isPinned) else it }
+                        repository.saveNotes(notes)
+                        longPressedNote = null 
+                    }
+                )
+                ListItem(
+                    headlineContent = { Text("Удалить в корзину", color = MaterialTheme.colorScheme.error) },
+                    leadingContent = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                    modifier = Modifier.clickable { 
+                        val n = longPressedNote!!
+                        notes = notes.map { if (it.id == n.id) it.copy(isDeleted = true) else it }
+                        repository.saveNotes(notes)
+                        longPressedNote = null 
+                    }
+                )
+            }
+        }
+    }
+
     if (showTrashScreen) {
         TrashScreen(notes = notes, onRestore = { n -> notes = notes.map { if (it.id == n.id) it.copy(isDeleted = false) else it }; repository.saveNotes(notes) }, onDeletePermanently = { n -> notes = notes.filter { it.id != n.id }; repository.saveNotes(notes) }, onClearAll = { notes = notes.filter { !it.isDeleted }; repository.saveNotes(notes) }, onBack = { showTrashScreen = false })
     } else if (currentEditingNote == null) {
@@ -163,7 +203,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             topBar = {
                 TopAppBar(title = { Text("NoteBox", fontWeight = FontWeight.Bold) }, actions = {
                     IconButton(onClick = { showStatsDialog = true }) { Icon(Icons.Default.Star, "Достижения") }
-                    // Меню сортировки
                     Box {
                         IconButton(onClick = { showSortMenu = true }) { Icon(Icons.Default.Sort, "Сортировка") }
                         DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
@@ -172,7 +211,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                             DropdownMenuItem(text = { Text("По алфавиту (А-Я)") }, leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }, onClick = { sortMode = 2; repository.saveSortMode(2); showSortMenu = false }, trailingIcon = { if (sortMode == 2) Icon(Icons.Default.Check, null) })
                         }
                     }
-                    // Основное меню
                     Box {
                         IconButton(onClick = { showSettingsMenu = true }) { Icon(Icons.Default.MoreVert, "Меню") }
                         DropdownMenu(expanded = showSettingsMenu, onDismissRequest = { showSettingsMenu = false }) {
@@ -237,15 +275,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             }
         }
         
-        if (longPressedNote != null) {
-            AlertDialog(onDismissRequest = { longPressedNote = null }, title = { Text(longPressedNote!!.title.ifBlank { "Без названия" }) }, text = { Text("Что сделать?") }, shape = RoundedCornerShape(24.dp),
-                confirmButton = { TextButton(onClick = { val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; cb.setPrimaryClip(ClipData.newPlainText("Note", longPressedNote!!.content)); Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show(); longPressedNote = null }) { Text("Копировать") } },
-                dismissButton = { Row {
-                    TextButton(onClick = { val n = longPressedNote!!; notes = notes.map { if (it.id == n.id) it.copy(isPinned = !it.isPinned) else it }; repository.saveNotes(notes); longPressedNote = null }) { Text(if (longPressedNote!!.isPinned) "Открепить" else "Закрепить") }
-                    TextButton(onClick = { val n = longPressedNote!!; notes = notes.map { if (it.id == n.id) it.copy(isDeleted = true) else it }; repository.saveNotes(notes); longPressedNote = null }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
-                } }
-            )
-        }
         if (showStatsDialog) StatsDialog(repository, activeNotes.size, onDismiss = { showStatsDialog = false })
         if (showPinDialog) {
             var newPin by remember { mutableStateOf("") }
