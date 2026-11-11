@@ -17,6 +17,7 @@ import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -349,12 +350,14 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
     val wordCount = remember(content) { content.split("\\s+".toRegex()).filter { it.isNotBlank() }.size }
     val charCount = remember(content) { content.length }
 
-    LaunchedEffect(title, content, isPinned, tag, reminderTime, cardColor, isChecklist) {
-        if (title.isNotBlank() || content.isNotBlank()) {
-            delay(2000)
-            onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime, color = cardColor, isChecklist = isChecklist))
-        }
+    // ФУНКЦИЯ СОХРАНЕНИЯ (вызывается кнопками)
+    fun saveAndExit() {
+        onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime, color = cardColor, isChecklist = isChecklist))
+        onCancel()
     }
+
+    // Перехват системной кнопки "Назад" -> Сохраняем и выходим
+    BackHandler { saveAndExit() }
 
     val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
@@ -378,13 +381,17 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Редактор") },
-                navigationIcon = { IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime, color = cardColor, isChecklist = isChecklist)); onCancel() }) { Icon(Icons.Default.ArrowBack, "Назад") } },
+                title = { Text("Редактор", fontSize = 18.sp) }, // Уменьшили заголовок, чтобы поместилось
+                navigationIcon = { 
+                    IconButton(onClick = { saveAndExit() }, modifier = Modifier.size(40.dp)) { 
+                        Icon(Icons.Default.ArrowBack, "Сохранить и выйти") 
+                    } 
+                },
                 actions = {
-                    IconButton(onClick = { isChecklist = !isChecklist }) { Icon(if (isChecklist) Icons.Default.Checklist else Icons.Default.FormatListBulleted, "Чек-лист", tint = if (isChecklist) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-                    IconButton(onClick = { isPinned = !isPinned }) { Icon(Icons.Default.PushPin, "Закрепить", tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    IconButton(onClick = { isChecklist = !isChecklist }, modifier = Modifier.size(40.dp)) { Icon(if (isChecklist) Icons.Default.Checklist else Icons.Default.FormatListBulleted, "Чек-лист", tint = if (isChecklist) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    IconButton(onClick = { isPinned = !isPinned }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.PushPin, "Закрепить", tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                     Box {
-                        IconButton(onClick = { showColorMenu = true }) { Icon(Icons.Default.Palette, "Цвет") }
+                        IconButton(onClick = { showColorMenu = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Palette, "Цвет") }
                         DropdownMenu(expanded = showColorMenu, onDismissRequest = { showColorMenu = false }) {
                             listOf("" to "Стандарт", "#FFCDD2" to "Красный", "#F8BBD0" to "Розовый", "#FFF9C4" to "Желтый", "#C8E6C9" to "Зеленый", "#BBDEFB" to "Синий").forEach { (hex, name) ->
                                 DropdownMenuItem(text = { Text(name) }, leadingIcon = { Box(modifier = Modifier.size(16.dp).clip(RoundedCornerShape(8.dp)).background(if (hex.isEmpty()) MaterialTheme.colorScheme.surface else Color(android.graphics.Color.parseColor(hex)))) }, onClick = { cardColor = hex; showColorMenu = false })
@@ -392,14 +399,14 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                         }
                     }
                     Box {
-                        IconButton(onClick = { showTagMenu = true }) { Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                        IconButton(onClick = { showTagMenu = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                         DropdownMenu(expanded = showTagMenu, onDismissRequest = { showTagMenu = false }) {
                             listOf("", "Работа", "Личное", "Идеи").forEach { t -> DropdownMenuItem(text = { Text(if (t.isBlank()) "Без тега" else t) }, onClick = { tag = t; showTagMenu = false }) }
                         }
                     }
-                    IconButton(onClick = { showDateTimePicker() }) { Icon(Icons.Default.Notifications, "Напоминание", tint = if (reminderTime > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-                    IconButton(onClick = { val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; cb.setPrimaryClip(ClipData.newPlainText("Note", content)); Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Default.ContentCopy, "Копировать") }
-                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime, color = cardColor, isChecklist = isChecklist)); onCancel() }) { Icon(Icons.Default.Check, "Готово") }
+                    IconButton(onClick = { showDateTimePicker() }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Notifications, "Напоминание", tint = if (reminderTime > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    IconButton(onClick = { val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; cb.setPrimaryClip(ClipData.newPlainText("Note", content)); Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.ContentCopy, "Копировать") }
+                    IconButton(onClick = { saveAndExit() }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Check, "Готово") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             )
@@ -452,9 +459,9 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                     TextButton(onClick = { cancelAlarm(context, note); reminderTime = 0 }) { Text("Отменить", color = MaterialTheme.colorScheme.error) }
                 }
             }
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            // Надпись "Автосохранение" убрана
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.Start) {
                 Text("$wordCount слов, $charCount симв.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Автосохранение", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
