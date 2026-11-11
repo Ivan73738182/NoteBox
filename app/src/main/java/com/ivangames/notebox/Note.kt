@@ -13,7 +13,8 @@ data class Note(
     val isPinned: Boolean = false,
     val tag: String = "",
     val wordCount: Int = 0,
-    val isDeleted: Boolean = false // НОВОЕ: для корзины
+    val isDeleted: Boolean = false,
+    val reminderTime: Long = 0L // 0 означает, что напоминания нет
 )
 
 class NoteRepository(context: Context) {
@@ -34,7 +35,8 @@ class NoteRepository(context: Context) {
                     isPinned = obj.optBoolean("isPinned", false),
                     tag = obj.optString("tag", ""),
                     wordCount = obj.optInt("wordCount", 0),
-                    isDeleted = obj.optBoolean("isDeleted", false)
+                    isDeleted = obj.optBoolean("isDeleted", false),
+                    reminderTime = obj.optLong("reminderTime", 0L)
                 )
             )
         }
@@ -53,6 +55,7 @@ class NoteRepository(context: Context) {
                 put("tag", note.tag)
                 put("wordCount", note.wordCount)
                 put("isDeleted", note.isDeleted)
+                put("reminderTime", note.reminderTime)
             }
             jsonArray.put(obj)
         }
