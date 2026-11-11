@@ -1,8 +1,8 @@
-name: Build APK
+name: Build Release APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -14,11 +14,18 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Build Debug APK
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > notebox-release.jks
+      - name: Build Release
+        env:
+          NOT_EBOX_STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          NOT_EBOX_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          NOT_EBOX_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
       - uses: actions/upload-artifact@v4
         with:
-          name: NoteBox-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: NoteBox-release
+          path: app/build/outputs/apk/release/*.apk

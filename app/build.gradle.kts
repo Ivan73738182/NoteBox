@@ -4,6 +4,14 @@ plugins {
 }
 
 android {
+    signingConfigs {
+        create("release") {
+            storeFile = file("../notebox-release.jks")
+            storePassword = System.getenv("NOT_EBOX_STORE_PASSWORD") ?: project.findProperty("NOT_EBOX_STORE_PASSWORD") as String?
+            keyAlias = System.getenv("NOT_EBOX_KEY_ALIAS") ?: project.findProperty("NOT_EBOX_KEY_ALIAS") as String?
+            keyPassword = System.getenv("NOT_EBOX_KEY_PASSWORD") ?: project.findProperty("NOT_EBOX_KEY_PASSWORD") as String?
+        }
+    }
     namespace = "com.ivangames.notebox"
     compileSdk = 34
 
@@ -18,6 +26,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             
         }
