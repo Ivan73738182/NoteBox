@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,7 +28,6 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
-// 1. Модель
 data class Note(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
@@ -35,7 +35,6 @@ data class Note(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-// 2. Хранилище
 class NoteRepository(context: Context) {
     private val prefs = context.getSharedPreferences("notes_storage", Context.MODE_PRIVATE)
 
@@ -72,7 +71,6 @@ class NoteRepository(context: Context) {
     }
 }
 
-// 3. Activity
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,7 +91,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// 4. Навигация
 @Composable
 fun NoteBoxApp(repository: NoteRepository) {
     var notes by remember { mutableStateOf(repository.getNotes()) }
@@ -133,7 +130,7 @@ fun NoteBoxApp(repository: NoteRepository) {
     }
 }
 
-// 5. Список
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteListScreen(
     notes: List<Note>,
@@ -232,7 +229,7 @@ fun NoteListScreen(
     }
 }
 
-// 6. Редактор
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteEditScreen(
     note: Note,
