@@ -1,9 +1,6 @@
 package com.ivangames.notebox
 
-import android.content.Context
-import android.content.Intent
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -17,7 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,24 +42,15 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteBoxApp(repository: NoteRepository) {
-    val context = LocalContext.current
     var notes by remember { mutableStateOf(repository.getNotes()) }
     var currentEditingNote by remember { mutableStateOf<Note?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedTag by remember { mutableStateOf("Все") }
-    var showUndoDelete by remember { mutableStateOf(false) }
-    var lastDeletedNote by remember { mutableStateOf<Note?>(null) }
     var showStatsDialog by remember { mutableStateOf(false) }
+    var lastDeletedNote by remember { mutableStateOf<Note?>(null) }
+    
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-
-    // Авто-очистка "Отменить"
-    LaunchedEffect(showUndoDelete) {
-        if (showUndoDelete) {
-            delay(4000)
-            showUndoDelete = false
-        }
-    }
 
     // Фильтрация
     val filteredNotes = notes.filter { note ->
@@ -74,24 +61,7 @@ fun NoteBoxApp(repository: NoteRepository) {
 
     if (currentEditingNote == null) {
         Scaffold(
-            snackbarHost = {
-                SnackbarHost(snackbarHostState) { data ->
-                    Snackbar(
-                        snackbarData = data,
-                        actionOnNewLine = false,
-                        actionLabel = { Text("Отменить") },
-                        dismissActionContentDescription = { Text("Закрыть") },
-                        onActionClick = {
-                            lastDeletedNote?.let {
-                                notes = notes + it
-                                repository.saveNotes(notes)
-                            }
-                            showUndoDelete = false
-                        },
-                        onDismissClick = { showUndoDelete = false }
-                    )
-                }
-            },
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
                     title = { Text("NoteBox", fontWeight = FontWeight.Bold) },
@@ -221,7 +191,7 @@ fun NoteBoxApp(repository: NoteRepository) {
                                             repository.saveNotes(notes)
                                         }) {
                                             Icon(
-                                                if (note.isPinned) Icons.Default.PushPin else Icons.Default.PushPin,
+                                                Icons.Default.PushPin,
                                                 "Закрепить",
                                                 tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                                             )
@@ -230,9 +200,18 @@ fun NoteBoxApp(repository: NoteRepository) {
                                             lastDeletedNote = note
                                             notes = notes.filter { it.id != note.id }
                                             repository.saveNotes(notes)
-                                            showUndoDelete = true
                                             scope.launch {
-                                                snackbarHostState.showSnackbar("Заметка удалена")
+                                                val result = snackbarHostState.showSnackbar(
+                                                    message = "Заметка удалена",
+                                                    actionLabel = "Отменить",
+                                                    duration = SnackbarDuration.Short
+                                                )
+                                                if (result == SnackbarResult.ActionPerformed) {
+                                                    lastDeletedNote?.let {
+                                                        notes = notes + it
+                                                        repository.saveNotes(notes)
+                                                    }
+                                                }
                                             }
                                         }) {
                                             Icon(Icons.Default.Delete, "Удалить", tint = MaterialTheme.colorScheme.error)
@@ -260,7 +239,7 @@ fun NoteBoxApp(repository: NoteRepository) {
                         wordCount = updatedNote.content.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
                     )
                     if (updatedNote.id !in notes.map { it.id }) {
-                        repository.addWordsCreated(finalNote.wordCount) // Статистика
+                        repository.addWordsCreated(finalNote.wordCount)
                     }
                     val existingIndex = notes.indexOfFirst { it.id == finalNote.id }
                     notes = if (existingIndex >= 0) {
