@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
+// 1. Модель данных
 data class Note(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
@@ -35,6 +37,7 @@ data class Note(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+// 2. Хранилище
 class NoteRepository(context: Context) {
     private val prefs = context.getSharedPreferences("notes_storage", Context.MODE_PRIVATE)
 
@@ -71,15 +74,50 @@ class NoteRepository(context: Context) {
     }
 }
 
+// 3. Тема (Тёмно-синяя)
+@Composable
+fun NoteBoxTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+    val colorScheme = if (darkTheme) {
+        darkColorScheme(
+            primary = Color(0xFF3F51B5),          // Тёмно-синий (основной)
+            onPrimary = Color.White,
+            primaryContainer = Color(0xFF1A237E),
+            onPrimaryContainer = Color.White,
+            secondary = Color(0xFF7986CB),
+            secondaryContainer = Color(0xFF283593),
+            background = Color(0xFF0F111A),       // Очень тёмный синий фон
+            onBackground = Color.White,
+            surface = Color(0xFF1A1F2B),          // Фон карточек
+            onSurface = Color.White,
+            surfaceVariant = Color(0xFF2A3040),   // Панель сверху
+            onSurfaceVariant = Color(0xFFB0BEC5),
+            error = Color(0xFFEF5350)
+        )
+    } else {
+        lightColorScheme(
+            primary = Color(0xFF3F51B5),
+            onPrimary = Color.White,
+            primaryContainer = Color(0xFFC5CAE9),
+            onPrimaryContainer = Color(0xFF1A237E),
+            secondary = Color(0xFF5C6BC0),
+            background = Color(0xFFF5F6FA),
+            onBackground = Color(0xFF1A1F2B),
+            surface = Color.White,
+            onSurface = Color(0xFF1A1F2B),
+            surfaceVariant = Color(0xFFE8EAF6),
+            onSurfaceVariant = Color(0xFF3F51B5)
+        )
+    }
+    MaterialTheme(colorScheme = colorScheme, content = content)
+}
+
+// 4. Activity
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val repository = NoteRepository(this)
         setContent {
-            val dark = isSystemInDarkTheme()
-            MaterialTheme(
-                colorScheme = if (dark) darkColorScheme() else lightColorScheme()
-            ) {
+            NoteBoxTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -91,6 +129,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// 5. Навигация
 @Composable
 fun NoteBoxApp(repository: NoteRepository) {
     var notes by remember { mutableStateOf(repository.getNotes()) }
@@ -130,6 +169,7 @@ fun NoteBoxApp(repository: NoteRepository) {
     }
 }
 
+// 6. Список заметок
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteListScreen(
@@ -145,12 +185,17 @@ fun NoteListScreen(
             TopAppBar(
                 title = { Text("NoteBox", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    titleContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddNote) {
+            FloatingActionButton(
+                onClick = onAddNote,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
                 Icon(Icons.Default.Add, contentDescription = "Создать заметку")
             }
         }
@@ -180,6 +225,9 @@ fun NoteListScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelectNote(note) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
                         Row(
@@ -229,6 +277,7 @@ fun NoteListScreen(
     }
 }
 
+// 7. Экран редактирования
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteEditScreen(
@@ -256,7 +305,11 @@ fun NoteEditScreen(
                     IconButton(onClick = { onSave(note.copy(title = title, content = content)) }) {
                         Icon(Icons.Default.Check, contentDescription = "Сохранить")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    titleContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
         }
     ) { padding ->
