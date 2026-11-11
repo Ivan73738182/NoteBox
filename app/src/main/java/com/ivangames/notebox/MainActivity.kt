@@ -1,117 +1,31 @@
 package com.ivangames.notebox
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-// 1. Модель данных
-data class Note(
-    val id: String = UUID.randomUUID().toString(),
-    val title: String,
-    val content: String,
-    val timestamp: Long = System.currentTimeMillis()
-)
-
-// 2. Хранилище
-class NoteRepository(context: Context) {
-    private val prefs = context.getSharedPreferences("notes_storage", Context.MODE_PRIVATE)
-
-    fun getNotes(): List<Note> {
-        val jsonString = prefs.getString("notes_key", "[]") ?: "[]"
-        val jsonArray = JSONArray(jsonString)
-        val notes = mutableListOf<Note>()
-        for (i in 0 until jsonArray.length()) {
-            val obj = jsonArray.getJSONObject(i)
-            notes.add(
-                Note(
-                    id = obj.getString("id"),
-                    title = obj.getString("title"),
-                    content = obj.getString("content"),
-                    timestamp = obj.getLong("timestamp")
-                )
-            )
-        }
-        return notes.sortedByDescending { it.timestamp }
-    }
-
-    fun saveNotes(notes: List<Note>) {
-        val jsonArray = JSONArray()
-        notes.forEach { note ->
-            val obj = JSONObject().apply {
-                put("id", note.id)
-                put("title", note.title)
-                put("content", note.content)
-                put("timestamp", note.timestamp)
-            }
-            jsonArray.put(obj)
-        }
-        prefs.edit().putString("notes_key", jsonArray.toString()).apply()
-    }
-}
-
-// 3. Тема (Тёмно-синяя)
-@Composable
-fun NoteBoxTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    val colorScheme = if (darkTheme) {
-        darkColorScheme(
-            primary = Color(0xFF3F51B5),          // Тёмно-синий (основной)
-            onPrimary = Color.White,
-            primaryContainer = Color(0xFF1A237E),
-            onPrimaryContainer = Color.White,
-            secondary = Color(0xFF7986CB),
-            secondaryContainer = Color(0xFF283593),
-            background = Color(0xFF0F111A),       // Очень тёмный синий фон
-            onBackground = Color.White,
-            surface = Color(0xFF1A1F2B),          // Фон карточек
-            onSurface = Color.White,
-            surfaceVariant = Color(0xFF2A3040),   // Панель сверху
-            onSurfaceVariant = Color(0xFFB0BEC5),
-            error = Color(0xFFEF5350)
-        )
-    } else {
-        lightColorScheme(
-            primary = Color(0xFF3F51B5),
-            onPrimary = Color.White,
-            primaryContainer = Color(0xFFC5CAE9),
-            onPrimaryContainer = Color(0xFF1A237E),
-            secondary = Color(0xFF5C6BC0),
-            background = Color(0xFFF5F6FA),
-            onBackground = Color(0xFF1A1F2B),
-            surface = Color.White,
-            onSurface = Color(0xFF1A1F2B),
-            surfaceVariant = Color(0xFFE8EAF6),
-            onSurfaceVariant = Color(0xFF3F51B5)
-        )
-    }
-    MaterialTheme(colorScheme = colorScheme, content = content)
-}
-
-// 4. Activity
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -129,22 +43,212 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// 5. Навигация
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteBoxApp(repository: NoteRepository) {
+    val context = LocalContext.current
     var notes by remember { mutableStateOf(repository.getNotes()) }
     var currentEditingNote by remember { mutableStateOf<Note?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedTag by remember { mutableStateOf("Все") }
+    var showUndoDelete by remember { mutableStateOf(false) }
+    var lastDeletedNote by remember { mutableStateOf<Note?>(null) }
+    var showStatsDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // Авто-очистка "Отменить"
+    LaunchedEffect(showUndoDelete) {
+        if (showUndoDelete) {
+            delay(4000)
+            showUndoDelete = false
+        }
+    }
+
+    // Фильтрация
+    val filteredNotes = notes.filter { note ->
+        val matchesSearch = note.title.contains(searchQuery, true) || note.content.contains(searchQuery, true)
+        val matchesTag = if (selectedTag == "Все") true else note.tag == selectedTag
+        matchesSearch && matchesTag
+    }
 
     if (currentEditingNote == null) {
-        NoteListScreen(
-            notes = notes,
-            onAddNote = { currentEditingNote = Note(title = "", content = "") },
-            onSelectNote = { currentEditingNote = it },
-            onDeleteNote = { noteToDelete ->
-                notes = notes.filter { it.id != noteToDelete.id }
-                repository.saveNotes(notes)
+        Scaffold(
+            snackbarHost = {
+                SnackbarHost(snackbarHostState) { data ->
+                    Snackbar(
+                        snackbarData = data,
+                        actionOnNewLine = false,
+                        actionLabel = { Text("Отменить") },
+                        dismissActionContentDescription = { Text("Закрыть") },
+                        onActionClick = {
+                            lastDeletedNote?.let {
+                                notes = notes + it
+                                repository.saveNotes(notes)
+                            }
+                            showUndoDelete = false
+                        },
+                        onDismissClick = { showUndoDelete = false }
+                    )
+                }
+            },
+            topBar = {
+                TopAppBar(
+                    title = { Text("NoteBox", fontWeight = FontWeight.Bold) },
+                    actions = {
+                        IconButton(onClick = { showStatsDialog = true }) {
+                            Icon(Icons.Default.Star, "Достижения и статистика")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        titleContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+            },
+            floatingActionButton = {
+                FloatingActionButton(
+                    onClick = { currentEditingNote = Note(title = "", content = "") },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(Icons.Default.Add, "Создать заметку")
+                }
             }
-        )
+        ) { padding ->
+            Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+                // Поиск
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Поиск заметок...") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, "Очистить")
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    singleLine = true
+                )
+
+                // Фильтры по тегам
+                val allTags = listOf("Все", "Работа", "Личное", "Идеи")
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    allTags.forEach { tag ->
+                        FilterChip(
+                            selected = selectedTag == tag,
+                            onClick = { selectedTag = tag },
+                            label = { Text(tag) }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Список
+                if (filteredNotes.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Ничего не найдено", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filteredNotes, key = { it.id }) { note ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { currentEditingNote = note },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (note.isPinned) {
+                                                Icon(Icons.Default.PushPin, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                            }
+                                            Text(
+                                                text = note.title.ifBlank { "Без названия" },
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        if (note.content.isNotBlank()) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = note.content,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = SimpleDateFormat("dd.MM.yy HH:mm", Locale.getDefault()).format(Date(note.timestamp)),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                            if (note.tag.isNotBlank()) {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "#${note.tag}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(onClick = {
+                                            notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }
+                                            repository.saveNotes(notes)
+                                        }) {
+                                            Icon(
+                                                if (note.isPinned) Icons.Default.PushPin else Icons.Default.PushPin,
+                                                "Закрепить",
+                                                tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                        IconButton(onClick = {
+                                            lastDeletedNote = note
+                                            notes = notes.filter { it.id != note.id }
+                                            repository.saveNotes(notes)
+                                            showUndoDelete = true
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("Заметка удалена")
+                                            }
+                                        }) {
+                                            Icon(Icons.Default.Delete, "Удалить", tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (showStatsDialog) {
+            StatsDialog(repository, notes.size, onDismiss = { showStatsDialog = false })
+        }
     } else {
         NoteEditScreen(
             note = currentEditingNote!!,
@@ -152,8 +256,12 @@ fun NoteBoxApp(repository: NoteRepository) {
                 if (updatedNote.title.isNotBlank() || updatedNote.content.isNotBlank()) {
                     val finalNote = updatedNote.copy(
                         title = updatedNote.title.ifBlank { "Без названия" },
-                        timestamp = System.currentTimeMillis()
+                        timestamp = System.currentTimeMillis(),
+                        wordCount = updatedNote.content.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
                     )
+                    if (updatedNote.id !in notes.map { it.id }) {
+                        repository.addWordsCreated(finalNote.wordCount) // Статистика
+                    }
                     val existingIndex = notes.indexOfFirst { it.id == finalNote.id }
                     notes = if (existingIndex >= 0) {
                         notes.toMutableList().apply { set(existingIndex, finalNote) }
@@ -169,115 +277,6 @@ fun NoteBoxApp(repository: NoteRepository) {
     }
 }
 
-// 6. Список заметок
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun NoteListScreen(
-    notes: List<Note>,
-    onAddNote: () -> Unit,
-    onSelectNote: (Note) -> Unit,
-    onDeleteNote: (Note) -> Unit
-) {
-    val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("NoteBox", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    titleContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddNote,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Создать заметку")
-            }
-        }
-    ) { padding ->
-        if (notes.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Нет заметок. Нажмите +, чтобы создать.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(notes, key = { it.id }) { note ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelectNote(note) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = note.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if (note.content.isNotBlank()) {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = note.content,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = dateFormat.format(Date(note.timestamp)),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            }
-                            IconButton(onClick = { onDeleteNote(note) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Удалить",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// 7. Экран редактирования
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteEditScreen(
@@ -287,41 +286,50 @@ fun NoteEditScreen(
 ) {
     var title by remember(note) { mutableStateOf(note.title) }
     var content by remember(note) { mutableStateOf(note.content) }
-
-    BackHandler {
-        onSave(note.copy(title = title, content = content))
-    }
+    var isPinned by remember(note) { mutableStateOf(note.isPinned) }
+    var tag by remember(note) { mutableStateOf(note.tag) }
+    var showTagMenu by remember { mutableStateOf(false) }
+    
+    BackHandler { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag)) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (note.title.isEmpty()) "Новая заметка" else "Редактирование") },
+                title = { Text(if (note.title.isEmpty() && note.content.isEmpty()) "Новая заметка" else "Редактирование") },
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад без сохранения")
+                        Icon(Icons.Default.ArrowBack, "Назад")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { onSave(note.copy(title = title, content = content)) }) {
-                        Icon(Icons.Default.Check, contentDescription = "Сохранить")
+                    IconButton(onClick = { isPinned = !isPinned }) {
+                        Icon(
+                            Icons.Default.PushPin, "Закрепить",
+                            tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = { showTagMenu = true }) {
+                        Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag)) }) {
+                        Icon(Icons.Default.Check, "Сохранить")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    titleContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             )
+            DropdownMenu(expanded = showTagMenu, onDismissRequest = { showTagMenu = false }) {
+                listOf("", "Работа", "Личное", "Идеи").forEach { t ->
+                    DropdownMenuItem(
+                        text = { Text(if (t.isBlank()) "Без тега" else t) },
+                        onClick = { tag = t; showTagMenu = false }
+                    )
+                }
+            }
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
-        ) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
+                value = title, onValueChange = { title = it },
                 label = { Text("Заголовок") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -329,13 +337,32 @@ fun NoteEditScreen(
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
-                value = content,
-                onValueChange = { content = it },
+                value = content, onValueChange = { content = it },
                 label = { Text("Текст заметки...") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
+                modifier = Modifier.fillMaxWidth().weight(1f)
             )
         }
     }
+}
+
+@Composable
+fun StatsDialog(repository: NoteRepository, totalNotes: Int, onDismiss: () -> Unit) {
+    val totalWords = repository.getTotalWordsCreated()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },
+        title = { Text("Достижения и Статистика") },
+        text = {
+            Column {
+                Text("📝 Всего заметок: $totalNotes")
+                Text("✍️ Всего слов написано: $totalWords")
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Достижения:", fontWeight = FontWeight.Bold)
+                Text(if (totalNotes >= 1) "✅ Первая заметка" else "⬜ Первая заметка")
+                Text(if (totalNotes >= 10) "✅ 10 заметок" else "⬜ 10 заметок")
+                Text(if (totalWords >= 100) "✅ 100 слов" else "⬜ 100 слов")
+                Text(if (totalWords >= 1000) "✅ 1000 слов (Писатель!)" else "⬜ 1000 слов (Писатель!)")
+            }
+        }
+    )
 }
