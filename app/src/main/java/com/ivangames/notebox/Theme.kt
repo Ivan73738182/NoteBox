@@ -8,7 +8,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 @Composable
-fun NoteBoxTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+fun NoteBoxTheme(themeMode: Int = 0, content: @Composable () -> Unit) {
+    // 0 - системная, 1 - светлая, 2 - темная
+    val darkTheme = when (themeMode) {
+        1 -> false
+        2 -> true
+        else -> isSystemInDarkTheme()
+    }
+
     val colorScheme = if (darkTheme) {
         darkColorScheme(
             primary = Color(0xFF3F51B5),

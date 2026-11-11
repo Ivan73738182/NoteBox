@@ -2,8 +2,8 @@ package com.ivangames.notebox
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -26,12 +27,20 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val repository = NoteRepository(this)
         setContent {
-            NoteBoxTheme {
+            var themeMode by remember { mutableIntStateOf(repository.getThemeMode()) }
+            NoteBoxTheme(themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NoteBoxApp(repository)
+                    NoteBoxApp(
+                        repository = repository,
+                        themeMode = themeMode,
+                        onThemeChange = { newMode ->
+                            themeMode = newMode
+                            repository.saveThemeMode(newMode)
+                        }
+                    )
                 }
             }
         }
@@ -40,18 +49,22 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NoteBoxApp(repository: NoteRepository) {
+fun NoteBoxApp(
+    repository: NoteRepository,
+    themeMode: Int,
+    onThemeChange: (Int) -> Unit
+) {
     var notes by remember { mutableStateOf(repository.getNotes()) }
     var currentEditingNote by remember { mutableStateOf<Note?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedTag by remember { mutableStateOf("Все") }
     var showStatsDialog by remember { mutableStateOf(false) }
+    var showThemeMenu by remember { mutableStateOf(false) }
     var lastDeletedNote by remember { mutableStateOf<Note?>(null) }
     
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // Фильтрация
     val filteredNotes = notes.filter { note ->
         val matchesSearch = note.title.contains(searchQuery, true) || note.content.contains(searchQuery, true)
         val matchesTag = if (selectedTag == "Все") true else note.tag == selectedTag
@@ -66,7 +79,29 @@ fun NoteBoxApp(repository: NoteRepository) {
                     title = { Text("NoteBox", fontWeight = FontWeight.Bold) },
                     actions = {
                         IconButton(onClick = { showStatsDialog = true }) {
-                            Icon(Icons.Default.Star, "Достижения и статистика")
+                            Icon(Icons.Default.Star, "Достижения")
+                        }
+                        Box {
+                            IconButton(onClick = { showThemeMenu = true }) {
+                                Icon(Icons.Default.Settings, "Настройки")
+                            }
+                            DropdownMenu(expanded = showThemeMenu, onDismissRequest = { showThemeMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Системная тема") },
+                                    onClick = { onThemeChange(0); showThemeMenu = false },
+                                    trailingIcon = { if (themeMode == 0) Icon(Icons.Default.Check, null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Светлая тема") },
+                                    onClick = { onThemeChange(1); showThemeMenu = false },
+                                    trailingIcon = { if (themeMode == 1) Icon(Icons.Default.Check, null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Тёмная тема") },
+                                    onClick = { onThemeChange(2); showThemeMenu = false },
+                                    trailingIcon = { if (themeMode == 2) Icon(Icons.Default.Check, null) }
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -86,7 +121,6 @@ fun NoteBoxApp(repository: NoteRepository) {
             }
         ) { padding ->
             Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-                // Поиск
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -103,7 +137,6 @@ fun NoteBoxApp(repository: NoteRepository) {
                     singleLine = true
                 )
 
-                // Фильтры по тегам
                 val allTags = listOf("Все", "Работа", "Личное", "Идеи")
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -119,7 +152,6 @@ fun NoteBoxApp(repository: NoteRepository) {
                 }
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Список
                 if (filteredNotes.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("Ничего не найдено", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -131,60 +163,79 @@ fun NoteBoxApp(repository: NoteRepository) {
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(filteredNotes, key = { it.id }) { note ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { currentEditingNote = note },
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (note.isPinned) {
-                                                Icon(Icons.Default.PushPin, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                            }
-                                            Text(
-                                                text = note.title.ifBlank { "Без названия" },
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                        if (note.content.isNotBlank()) {
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = note.content,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = SimpleDateFormat("dd.MM.yy HH:mm", Locale.getDefault()).format(Date(note.timestamp)),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.outline
-                                            )
-                                            if (note.tag.isNotBlank()) {
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = "#${note.tag}",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.primary
-                                                )
+                            SwipeToDeleteContainer(
+                                onDelete = {
+                                    lastDeletedNote = note
+                                    notes = notes.filter { it.id != note.id }
+                                    repository.saveNotes(notes)
+                                    scope.launch {
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "Заметка удалена",
+                                            actionLabel = "Отменить",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            lastDeletedNote?.let {
+                                                notes = notes + it
+                                                repository.saveNotes(notes)
                                             }
                                         }
                                     }
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                }
+                            ) {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { currentEditingNote = note },
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (note.isPinned) {
+                                                    Icon(Icons.Default.PushPin, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                }
+                                                Text(
+                                                    text = note.title.ifBlank { "Без названия" },
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            if (note.content.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = note.content,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = SimpleDateFormat("dd.MM.yy HH:mm", Locale.getDefault()).format(Date(note.timestamp)),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.outline
+                                                )
+                                                if (note.tag.isNotBlank()) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = "#${note.tag}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                            }
+                                        }
                                         IconButton(onClick = {
                                             notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }
                                             repository.saveNotes(notes)
@@ -194,26 +245,6 @@ fun NoteBoxApp(repository: NoteRepository) {
                                                 "Закрепить",
                                                 tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                                             )
-                                        }
-                                        IconButton(onClick = {
-                                            lastDeletedNote = note
-                                            notes = notes.filter { it.id != note.id }
-                                            repository.saveNotes(notes)
-                                            scope.launch {
-                                                val result = snackbarHostState.showSnackbar(
-                                                    message = "Заметка удалена",
-                                                    actionLabel = "Отменить",
-                                                    duration = SnackbarDuration.Short
-                                                )
-                                                if (result == SnackbarResult.ActionPerformed) {
-                                                    lastDeletedNote?.let {
-                                                        notes = notes + it
-                                                        repository.saveNotes(notes)
-                                                    }
-                                                }
-                                            }
-                                        }) {
-                                            Icon(Icons.Default.Delete, "Удалить", tint = MaterialTheme.colorScheme.error)
                                         }
                                     }
                                 }
@@ -257,6 +288,32 @@ fun NoteBoxApp(repository: NoteRepository) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun SwipeToDeleteContainer(onDelete: () -> Unit, content: @Composable () -> Unit) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = {
+            if (it == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else false
+        }
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 20.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(Icons.Default.Delete, "Удалить", tint = MaterialTheme.colorScheme.error)
+            }
+        },
+        content = { content() }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun NoteEditScreen(
     note: Note,
     onSave: (Note) -> Unit,
@@ -268,45 +325,40 @@ fun NoteEditScreen(
     var tag by remember(note) { mutableStateOf(note.tag) }
     var showTagMenu by remember { mutableStateOf(false) }
     
-    BackHandler { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag)) }
+    // Логика автосохранения (ждем 2 секунды после последнего нажатия)
+    LaunchedEffect(title, content, isPinned, tag) {
+        if (title.isNotBlank() || content.isNotBlank()) {
+            delay(2000)
+            onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag))
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Редактор") }, // Изменили текст
+                title = { Text("Редактор") },
                 navigationIcon = {
-                    IconButton(onClick = onCancel) {
+                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag)); onCancel() }) {
                         Icon(Icons.Default.ArrowBack, "Назад")
                     }
                 },
                 actions = {
                     IconButton(onClick = { isPinned = !isPinned }) {
-                        Icon(
-                            Icons.Default.PushPin, "Закрепить",
-                            tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Icon(Icons.Default.PushPin, "Закрепить", tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    
-                    // Оборачиваем в Box, чтобы меню выпадало ровно под кнопкой
                     Box {
                         IconButton(onClick = { showTagMenu = true }) {
                             Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        DropdownMenu(
-                            expanded = showTagMenu,
-                            onDismissRequest = { showTagMenu = false }
-                        ) {
+                        DropdownMenu(expanded = showTagMenu, onDismissRequest = { showTagMenu = false }) {
                             listOf("", "Работа", "Личное", "Идеи").forEach { t ->
-                                DropdownMenuItem(
-                                    text = { Text(if (t.isBlank()) "Без тега" else t) },
-                                    onClick = { tag = t; showTagMenu = false }
-                                )
+                                DropdownMenuItem(text = { Text(if (t.isBlank()) "Без тега" else t) }, onClick = { tag = t; showTagMenu = false })
                             }
                         }
                     }
-
-                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag)) }) {
-                        Icon(Icons.Default.Check, "Сохранить")
+                    // Галочка теперь просто закрывает экран (автосохранение уже сработало)
+                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag)); onCancel() }) {
+                        Icon(Icons.Default.Check, "Готово")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -326,6 +378,12 @@ fun NoteEditScreen(
                 value = content, onValueChange = { content = it },
                 label = { Text("Текст заметки...") },
                 modifier = Modifier.fillMaxWidth().weight(1f)
+            )
+            Text(
+                text = "Автосохранение активно",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp).align(Alignment.End)
             )
         }
     }

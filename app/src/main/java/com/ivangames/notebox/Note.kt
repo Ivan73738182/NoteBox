@@ -36,7 +36,6 @@ class NoteRepository(context: Context) {
                 )
             )
         }
-        // Сначала закрепленные, потом по времени
         return notes.sortedWith(compareByDescending<Note> { it.isPinned }.thenByDescending { it.timestamp })
     }
 
@@ -57,9 +56,14 @@ class NoteRepository(context: Context) {
         prefs.edit().putString("notes_key", jsonArray.toString()).apply()
     }
 
-    // Достижения
     fun getTotalWordsCreated(): Int = prefs.getInt("total_words_created", 0)
     fun addWordsCreated(count: Int) {
         prefs.edit().putInt("total_words_created", getTotalWordsCreated() + count).apply()
+    }
+
+    // Настройки темы (0 - системная, 1 - светлая, 2 - темная)
+    fun getThemeMode(): Int = prefs.getInt("theme_mode", 0)
+    fun saveThemeMode(mode: Int) {
+        prefs.edit().putInt("theme_mode", mode).apply()
     }
 }
