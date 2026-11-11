@@ -14,18 +14,11 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Decode keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > notebox.keystore
-      - name: Build Release APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      - name: Build Debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: NoteBox-release
-          path: app/build/outputs/apk/release/*.apk
+          name: NoteBox-debug
+          path: app/build/outputs/apk/debug/*.apk

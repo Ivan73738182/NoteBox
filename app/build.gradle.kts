@@ -15,19 +15,11 @@ android {
         versionName = "1.0"
     }
 
-    signingConfigs {
-        create("release") {
-            storeFile = file("../notebox.keystore")
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "notebox123"
-            keyAlias = System.getenv("KEY_ALIAS") ?: "notebox"
-            keyPassword = System.getenv("KEY_PASSWORD") ?: "notebox123"
-        }
-    }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            
         }
     }
     compileOptions {
