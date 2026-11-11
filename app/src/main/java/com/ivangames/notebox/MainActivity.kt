@@ -11,6 +11,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.widget.Toast
@@ -162,7 +164,16 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                 )
             },
             floatingActionButton = {
-                FloatingActionButton(onClick = { currentEditingNote = Note(title = "", content = "") }, containerColor = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(16.dp)) {
+                FloatingActionButton(
+                    onClick = { 
+                        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
+                        currentEditingNote = Note(title = "", content = "") 
+                    }, 
+                    containerColor = MaterialTheme.colorScheme.primary, 
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp) // Красивая тень
+                ) {
                     Icon(Icons.Default.Add, "Создать")
                 }
             }
@@ -416,7 +427,13 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                 }
             } else {
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                    OutlinedTextField(value = content, onValueChange = { content = it }, label = { Text("Текст заметки...") }, modifier = Modifier.fillMaxSize(), shape = RoundedCornerShape(16.dp))
+                    OutlinedTextField(
+                        value = content, 
+                        onValueChange = { content = it }, 
+                        placeholder = { if (content.isEmpty()) Text("Начни писать что-нибудь...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) }, // ПОДСКАЗКА
+                        modifier = Modifier.fillMaxSize(), 
+                        shape = RoundedCornerShape(16.dp)
+                    )
                     FloatingActionButton(onClick = {
                         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply { putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU") }
                         try { speechLauncher.launch(intent) } catch (e: Exception) { Toast.makeText(context, "Нет голосового ввода", Toast.LENGTH_SHORT).show() }
@@ -441,13 +458,22 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NoteCard(note: Note, onPin: () -> Unit, onClick: () -> Unit, onLongClick: () -> Unit, isGrid: Boolean = false, fontScale: Float = 1.0f) {
+    val context = LocalContext.current
     val bgColor = if (note.color.isNotEmpty()) Color(android.graphics.Color.parseColor(note.color)) else MaterialTheme.colorScheme.surface
     val textColor = if (note.color.isNotEmpty()) Color.Black else MaterialTheme.colorScheme.onSurface
 
     Card(
-        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        modifier = Modifier.fillMaxWidth().combinedClickable(
+            onClick = onClick,
+            onLongClick = { 
+                // ВИБРАЦИЯ ПРИ ДОЛГОМ НАЖАТИИ
+                val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vibrator.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
+                onLongClick() 
+            }
+        ),
         colors = CardDefaults.cardColors(containerColor = bgColor),
-        shape = RoundedCornerShape(20.dp) // МЯГКИЕ УГЛЫ ДЛЯ КАРТОЧЕК
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
