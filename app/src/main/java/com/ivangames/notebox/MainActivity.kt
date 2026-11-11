@@ -97,7 +97,7 @@ fun LockScreen(repository: NoteRepository, onUnlock: () -> Unit) {
             shape = RoundedCornerShape(16.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = { if (inputPin == correctPin) onUnlock() else inputPin = "" }) { Text("Войти") }
+        Button(onClick = { if (inputPin == correctPin) onUnlock() else inputPin = "" }, shape = RoundedCornerShape(16.dp)) { Text("Войти") }
     }
 }
 
@@ -166,13 +166,19 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             floatingActionButton = {
                 FloatingActionButton(
                     onClick = { 
-                        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
+                        try {
+                            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                            if (vibrator.hasVibrator()) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
+                                }
+                            }
+                        } catch (e: Exception) { }
                         currentEditingNote = Note(title = "", content = "") 
                     }, 
                     containerColor = MaterialTheme.colorScheme.primary, 
                     shape = RoundedCornerShape(16.dp),
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp) // Красивая тень
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp)
                 ) {
                     Icon(Icons.Default.Add, "Создать")
                 }
@@ -190,7 +196,7 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                 
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("Все", "Работа", "Личное", "Идеи").forEach { tag -> 
-                        FilterChip(selected = selectedTag == tag, onClick = { selectedTag = tag }, label = { Text(tag) }) 
+                        FilterChip(selected = selectedTag == tag, onClick = { selectedTag = tag }, label = { Text(tag) }, shape = RoundedCornerShape(16.dp)) 
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -236,7 +242,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             }
         }
         
-        // Диалоги
         if (longPressedNote != null) {
             AlertDialog(
                 onDismissRequest = { longPressedNote = null }, 
@@ -261,7 +266,7 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             AlertDialog(
                 onDismissRequest = { showPinDialog = false },
                 title = { Text("Установить PIN-код") },
-                text = { OutlinedTextField(value = newPin, onValueChange = { if (it.length <= 4) newPin = it }, label = { Text("4 цифры (пусто = удалить)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)) },
+                text = { OutlinedTextField(value = newPin, onValueChange = { if (it.length <= 4) newPin = it }, label = { Text("4 цифры (пусто = удалить)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), shape = RoundedCornerShape(16.dp)) },
                 shape = RoundedCornerShape(24.dp),
                 confirmButton = { TextButton(onClick = { repository.savePinCode(newPin); showPinDialog = false }) { Text("Сохранить") } }
             )
@@ -401,7 +406,7 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Заголовок") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Заголовок") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(16.dp))
             Spacer(modifier = Modifier.height(12.dp))
             
             if (isChecklist) {
@@ -422,7 +427,7 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = "", onValueChange = { if (it.isNotBlank()) content = content + "\n[ ] $it" },
-                        placeholder = { Text("Добавить пункт...") }, modifier = Modifier.fillMaxWidth()
+                        placeholder = { Text("Добавить пункт...") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)
                     )
                 }
             } else {
@@ -430,14 +435,14 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
                     OutlinedTextField(
                         value = content, 
                         onValueChange = { content = it }, 
-                        placeholder = { if (content.isEmpty()) Text("Начни писать что-нибудь...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) }, // ПОДСКАЗКА
+                        placeholder = { if (content.isEmpty()) Text("Начни писать что-нибудь...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
                         modifier = Modifier.fillMaxSize(), 
                         shape = RoundedCornerShape(16.dp)
                     )
                     FloatingActionButton(onClick = {
                         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply { putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU") }
                         try { speechLauncher.launch(intent) } catch (e: Exception) { Toast.makeText(context, "Нет голосового ввода", Toast.LENGTH_SHORT).show() }
-                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Mic, "Голос") }
+                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp), containerColor = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(16.dp)) { Icon(Icons.Default.Mic, "Голос") }
                 }
             }
             
@@ -466,9 +471,14 @@ fun NoteCard(note: Note, onPin: () -> Unit, onClick: () -> Unit, onLongClick: ()
         modifier = Modifier.fillMaxWidth().combinedClickable(
             onClick = onClick,
             onLongClick = { 
-                // ВИБРАЦИЯ ПРИ ДОЛГОМ НАЖАТИИ
-                val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vibrator.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
+                try {
+                    val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                    if (vibrator.hasVibrator()) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            vibrator.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
+                        }
+                    }
+                } catch (e: Exception) { }
                 onLongClick() 
             }
         ),
