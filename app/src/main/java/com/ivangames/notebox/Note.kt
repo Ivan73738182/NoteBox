@@ -12,7 +12,8 @@ data class Note(
     val timestamp: Long = System.currentTimeMillis(),
     val isPinned: Boolean = false,
     val tag: String = "",
-    val wordCount: Int = 0
+    val wordCount: Int = 0,
+    val isDeleted: Boolean = false // НОВОЕ: для корзины
 )
 
 class NoteRepository(context: Context) {
@@ -32,7 +33,8 @@ class NoteRepository(context: Context) {
                     timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
                     isPinned = obj.optBoolean("isPinned", false),
                     tag = obj.optString("tag", ""),
-                    wordCount = obj.optInt("wordCount", 0)
+                    wordCount = obj.optInt("wordCount", 0),
+                    isDeleted = obj.optBoolean("isDeleted", false)
                 )
             )
         }
@@ -50,6 +52,7 @@ class NoteRepository(context: Context) {
                 put("isPinned", note.isPinned)
                 put("tag", note.tag)
                 put("wordCount", note.wordCount)
+                put("isDeleted", note.isDeleted)
             }
             jsonArray.put(obj)
         }
@@ -61,7 +64,6 @@ class NoteRepository(context: Context) {
         prefs.edit().putInt("total_words_created", getTotalWordsCreated() + count).apply()
     }
 
-    // Настройки темы (0 - системная, 1 - светлая, 2 - темная)
     fun getThemeMode(): Int = prefs.getInt("theme_mode", 0)
     fun saveThemeMode(mode: Int) {
         prefs.edit().putInt("theme_mode", mode).apply()
