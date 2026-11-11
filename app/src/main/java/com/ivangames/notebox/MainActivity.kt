@@ -103,6 +103,7 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     var selectedTag by remember { mutableStateOf("Все") }
     var showStatsDialog by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
     var showTrashScreen by remember { mutableStateOf(false) }
     var longPressedNote by remember { mutableStateOf<Note?>(null) }
     var isGridView by remember { mutableStateOf(repository.isGridView()) }
@@ -110,11 +111,23 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     var showFontDialog by remember { mutableStateOf(false) }
     var fontScale by remember { mutableStateOf(repository.getFontScale()) }
     var showAddMenu by remember { mutableStateOf(false) }
+    var sortMode by remember { mutableStateOf(repository.getSortMode()) }
+    
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
     val activeNotes = notes.filter { !it.isDeleted }
-    val filteredNotes = activeNotes.filter { note ->
+    
+    // ЛОГИКА СОРТИРОВКИ
+    val sortedNotes = remember(activeNotes, sortMode) {
+        when (sortMode) {
+            1 -> activeNotes.sortedWith(compareByDescending<Note> { it.isPinned }.thenBy { it.timestamp })
+            2 -> activeNotes.sortedWith(compareByDescending<Note> { it.isPinned }.thenBy { it.title.lowercase() })
+            else -> activeNotes.sortedWith(compareByDescending<Note> { it.isPinned }.thenByDescending { it.timestamp })
+        }
+    }
+
+    val filteredNotes = sortedNotes.filter { note ->
         val matchesSearch = note.title.contains(searchQuery, true) || note.content.contains(searchQuery, true)
         val matchesTag = if (selectedTag == "Все") true else note.tag == selectedTag
         matchesSearch && matchesTag
@@ -150,6 +163,16 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             topBar = {
                 TopAppBar(title = { Text("NoteBox", fontWeight = FontWeight.Bold) }, actions = {
                     IconButton(onClick = { showStatsDialog = true }) { Icon(Icons.Default.Star, "Достижения") }
+                    // Меню сортировки
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) { Icon(Icons.Default.Sort, "Сортировка") }
+                        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                            DropdownMenuItem(text = { Text("Сначала новые") }, leadingIcon = { Icon(Icons.Default.ArrowDownward, null) }, onClick = { sortMode = 0; repository.saveSortMode(0); showSortMenu = false }, trailingIcon = { if (sortMode == 0) Icon(Icons.Default.Check, null) })
+                            DropdownMenuItem(text = { Text("Сначала старые") }, leadingIcon = { Icon(Icons.Default.ArrowUpward, null) }, onClick = { sortMode = 1; repository.saveSortMode(1); showSortMenu = false }, trailingIcon = { if (sortMode == 1) Icon(Icons.Default.Check, null) })
+                            DropdownMenuItem(text = { Text("По алфавиту (А-Я)") }, leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }, onClick = { sortMode = 2; repository.saveSortMode(2); showSortMenu = false }, trailingIcon = { if (sortMode == 2) Icon(Icons.Default.Check, null) })
+                        }
+                    }
+                    // Основное меню
                     Box {
                         IconButton(onClick = { showSettingsMenu = true }) { Icon(Icons.Default.MoreVert, "Меню") }
                         DropdownMenu(expanded = showSettingsMenu, onDismissRequest = { showSettingsMenu = false }) {
