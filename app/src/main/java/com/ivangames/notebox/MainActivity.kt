@@ -381,7 +381,7 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Редактор", fontSize = 18.sp) }, // Уменьшили заголовок, чтобы поместилось
+                title = { }, // Уменьшили заголовок, чтобы поместилось
                 navigationIcon = { 
                     IconButton(onClick = { saveAndExit() }, modifier = Modifier.size(40.dp)) { 
                         Icon(Icons.Default.ArrowBack, "Сохранить и выйти") 
