@@ -15,6 +15,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -28,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -41,22 +45,15 @@ class MainActivity : ComponentActivity() {
         val repository = NoteRepository(this)
         setContent {
             var themeMode by remember { mutableIntStateOf(repository.getThemeMode()) }
-            
-            // Запрос разрешений на уведомления (для Android 13+)
             val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
             LaunchedEffect(Unit) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
-
             NoteBoxTheme(themeMode) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    NoteBoxApp(
-                        repository = repository,
-                        themeMode = themeMode,
-                        onThemeChange = { newMode -> themeMode = newMode; repository.saveThemeMode(newMode) }
-                    )
+                    NoteBoxApp(repository = repository, themeMode = themeMode, onThemeChange = { m -> themeMode = m; repository.saveThemeMode(m) })
                 }
             }
         }
@@ -74,7 +71,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     var showStatsDialog by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
     var showTrashScreen by remember { mutableStateOf(false) }
-    
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -127,22 +123,33 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (filteredNotes.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Ничего не найдено") }
+                    // КРАСИВОЕ ПУСТОЕ СОСТОЯНИЕ
+                    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.Book, null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Здесь пока пусто", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Нажми +, чтобы создать заметку", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                    }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(filteredNotes, key = { it.id }) { note ->
-                            SwipeToDeleteContainer(onDelete = {
-                                notes = notes.map { if (it.id == note.id) it.copy(isDeleted = true) else it }
-                                repository.saveNotes(notes)
-                                scope.launch {
-                                    val res = snackbarHostState.showSnackbar("В корзине", "Отменить", duration = SnackbarDuration.Short)
-                                    if (res == SnackbarResult.ActionPerformed) {
-                                        notes = notes.map { if (it.id == note.id) it.copy(isDeleted = false) else it }
-                                        repository.saveNotes(notes)
+                            // Плавное появление
+                            var visible by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) { delay(50); visible = true }
+                            AnimatedVisibility(visible = visible, enter = fadeIn() + slideInVertically { it / 2 }) {
+                                SwipeToDeleteContainer(onDelete = {
+                                    notes = notes.map { if (it.id == note.id) it.copy(isDeleted = true) else it }
+                                    repository.saveNotes(notes)
+                                    scope.launch {
+                                        val res = snackbarHostState.showSnackbar("В корзине", "Отменить", duration = SnackbarDuration.Short)
+                                        if (res == SnackbarResult.ActionPerformed) {
+                                            notes = notes.map { if (it.id == note.id) it.copy(isDeleted = false) else it }
+                                            repository.saveNotes(notes)
+                                        }
                                     }
+                                }) {
+                                    NoteCard(note = note, onPin = { notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }; repository.saveNotes(notes) }, onClick = { currentEditingNote = note })
                                 }
-                            }) {
-                                NoteCard(note = note, onPin = { notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }; repository.saveNotes(notes) }, onClick = { currentEditingNote = note })
                             }
                         }
                     }
@@ -155,11 +162,7 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             note = currentEditingNote!!,
             onSave = { updatedNote ->
                 if (updatedNote.title.isNotBlank() || updatedNote.content.isNotBlank()) {
-                    val finalNote = updatedNote.copy(
-                        title = updatedNote.title.ifBlank { "Без названия" },
-                        timestamp = System.currentTimeMillis(),
-                        wordCount = updatedNote.content.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
-                    )
+                    val finalNote = updatedNote.copy(title = updatedNote.title.ifBlank { "Без названия" }, timestamp = System.currentTimeMillis(), wordCount = updatedNote.content.split("\\s+".toRegex()).filter { it.isNotBlank() }.size)
                     if (updatedNote.id !in notes.map { it.id }) repository.addWordsCreated(finalNote.wordCount)
                     val existingIndex = notes.indexOfFirst { it.id == finalNote.id }
                     notes = if (existingIndex >= 0) notes.toMutableList().apply { set(existingIndex, finalNote) } else notes + finalNote
@@ -172,34 +175,20 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     }
 }
 
-// Функция установки будильника
 fun setAlarm(context: Context, note: Note, timeInMillis: Long) {
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     val intent = Intent(context, AlarmReceiver::class.java).apply {
-        putExtra("note_title", note.title.ifBlank { "Без названия" })
-        putExtra("note_content", note.content)
-        putExtra("note_id", note.id.hashCode())
+        putExtra("note_title", note.title.ifBlank { "Без названия" }); putExtra("note_content", note.content); putExtra("note_id", note.id.hashCode())
     }
     val pendingIntent = PendingIntent.getBroadcast(context, note.id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
     try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
-            } else {
-                val intentSettings = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply { data = Uri.parse("package:${context.packageName}") }
-                context.startActivity(intentSettings)
-                Toast.makeText(context, "Разрешите точные будильники", Toast.LENGTH_LONG).show()
-            }
-        } else {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
-        }
-    } catch (e: SecurityException) {
-        Toast.makeText(context, "Ошибка: нет разрешения на будильник", Toast.LENGTH_SHORT).show()
-    }
+            if (alarmManager.canScheduleExactAlarms()) alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
+            else { context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply { data = Uri.parse("package:${context.packageName}") }); Toast.makeText(context, "Разрешите точные будильники", Toast.LENGTH_LONG).show() }
+        } else alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
+    } catch (e: SecurityException) { Toast.makeText(context, "Ошибка: нет разрешения", Toast.LENGTH_SHORT).show() }
 }
 
-// Отмена будильника
 fun cancelAlarm(context: Context, note: Note) {
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     val intent = Intent(context, AlarmReceiver::class.java)
@@ -208,7 +197,7 @@ fun cancelAlarm(context: Context, note: Note) {
 }
 
 fun exportNotes(context: Context, notes: List<Note>) {
-    if (notes.isEmpty()) { Toast.makeText(context, "Нет заметок для экспорта", Toast.LENGTH_SHORT).show(); return }
+    if (notes.isEmpty()) { Toast.makeText(context, "Нет заметок", Toast.LENGTH_SHORT).show(); return }
     val text = StringBuilder()
     notes.forEach { note ->
         text.append("Заголовок: ${note.title}\n")
@@ -216,8 +205,7 @@ fun exportNotes(context: Context, notes: List<Note>) {
         text.append("Дата: ${SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(note.timestamp))}\n")
         text.append("Текст:\n${note.content}\n\n-------------------\n\n")
     }
-    val sendIntent = Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, text.toString()); type = "text/plain" }
-    context.startActivity(Intent.createChooser(sendIntent, "Поделиться заметками"))
+    context.startActivity(Intent.createChooser(Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, text.toString()); type = "text/plain" }, "Поделиться заметками"))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -231,6 +219,10 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
     var reminderTime by remember(note) { mutableStateOf(note.reminderTime) }
     var showTagMenu by remember { mutableStateOf(false) }
 
+    // Счётчик символов и слов
+    val wordCount = remember(content) { content.split("\\s+".toRegex()).filter { it.isNotBlank() }.size }
+    val charCount = remember(content) { content.length }
+
     LaunchedEffect(title, content, isPinned, tag, reminderTime) {
         if (title.isNotBlank() || content.isNotBlank()) {
             delay(2000)
@@ -238,19 +230,15 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
         }
     }
 
-    // Функция показа выбора даты и времени
     fun showDateTimePicker() {
         val calendar = Calendar.getInstance()
         if (reminderTime > 0) calendar.timeInMillis = reminderTime
         val datePicker = DatePickerDialog(context, { _, year, month, day ->
             calendar.set(year, month, day)
             val timePicker = TimePickerDialog(context, { _, hour, minute ->
-                calendar.set(Calendar.HOUR_OF_DAY, hour)
-                calendar.set(Calendar.MINUTE, minute)
-                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.HOUR_OF_DAY, hour); calendar.set(Calendar.MINUTE, minute); calendar.set(Calendar.SECOND, 0)
                 reminderTime = calendar.timeInMillis
-                val finalNote = note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime)
-                setAlarm(context, finalNote, reminderTime)
+                setAlarm(context, note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime), reminderTime)
                 Toast.makeText(context, "Напоминание установлено", Toast.LENGTH_SHORT).show()
             }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), true)
             timePicker.show()
@@ -262,35 +250,17 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Редактор") },
-                navigationIcon = {
-                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime)); onCancel() }) {
-                        Icon(Icons.Default.ArrowBack, "Назад")
-                    }
-                },
+                navigationIcon = { IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime)); onCancel() }) { Icon(Icons.Default.ArrowBack, "Назад") } },
                 actions = {
-                    IconButton(onClick = { isPinned = !isPinned }) {
-                        Icon(Icons.Default.PushPin, "Закрепить", tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    IconButton(onClick = { isPinned = !isPinned }) { Icon(Icons.Default.PushPin, "Закрепить", tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                     Box {
-                        IconButton(onClick = { showTagMenu = true }) {
-                            Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        IconButton(onClick = { showTagMenu = true }) { Icon(Icons.Default.Label, "Тег", tint = if (tag.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                         DropdownMenu(expanded = showTagMenu, onDismissRequest = { showTagMenu = false }) {
-                            listOf("", "Работа", "Личное", "Идеи").forEach { t ->
-                                DropdownMenuItem(text = { Text(if (t.isBlank()) "Без тега" else t) }, onClick = { tag = t; showTagMenu = false })
-                            }
+                            listOf("", "Работа", "Личное", "Идеи").forEach { t -> DropdownMenuItem(text = { Text(if (t.isBlank()) "Без тега" else t) }, onClick = { tag = t; showTagMenu = false }) }
                         }
                     }
-                    // НОВАЯ КНОПКА БУДИЛЬНИКА
-                    IconButton(onClick = { showDateTimePicker() }) {
-                        Icon(
-                            Icons.Default.Notifications, "Напоминание",
-                            tint = if (reminderTime > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime)); onCancel() }) {
-                        Icon(Icons.Default.Check, "Готово")
-                    }
+                    IconButton(onClick = { showDateTimePicker() }) { Icon(Icons.Default.Notifications, "Напоминание", tint = if (reminderTime > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    IconButton(onClick = { onSave(note.copy(title = title, content = content, isPinned = isPinned, tag = tag, reminderTime = reminderTime)); onCancel() }) { Icon(Icons.Default.Check, "Готово") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             )
@@ -301,20 +271,18 @@ fun NoteEditScreen(note: Note, onSave: (Note) -> Unit, onCancel: () -> Unit) {
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(value = content, onValueChange = { content = it }, label = { Text("Текст заметки...") }, modifier = Modifier.fillMaxWidth().weight(1f))
             
-            // Показываем дату напоминания, если она есть, и кнопку отмены
             if (reminderTime > 0) {
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "⏰ ${SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(reminderTime))}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    TextButton(onClick = { cancelAlarm(context, note); reminderTime = 0 }) {
-                        Text("Отменить", color = MaterialTheme.colorScheme.error)
-                    }
+                    Text(text = "⏰ ${SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(reminderTime))}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    TextButton(onClick = { cancelAlarm(context, note); reminderTime = 0 }) { Text("Отменить", color = MaterialTheme.colorScheme.error) }
                 }
             }
-            Text(text = "Автосохранение активно", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp).align(Alignment.End))
+            
+            // СЧЁТЧИК
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(text = "$wordCount слов, $charCount символов", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = "Автосохранение активно", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -345,9 +313,7 @@ fun NoteCard(note: Note, onPin: () -> Unit, onClick: () -> Unit) {
 fun SwipeToDeleteContainer(onDelete: () -> Unit, content: @Composable () -> Unit) {
     val dismissState = rememberSwipeToDismissBoxState(confirmValueChange = { if (it == SwipeToDismissBoxValue.EndToStart) { onDelete(); true } else false })
     SwipeToDismissBox(state = dismissState, enableDismissFromStartToEnd = false, backgroundContent = {
-        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 20.dp), contentAlignment = Alignment.CenterEnd) {
-            Icon(Icons.Default.Delete, "Удалить", tint = MaterialTheme.colorScheme.error)
-        }
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 20.dp), contentAlignment = Alignment.CenterEnd) { Icon(Icons.Default.Delete, "Удалить", tint = MaterialTheme.colorScheme.error) }
     }, content = { content() })
 }
 
