@@ -1,16 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Разрешение на уведомления для Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Разрешение на точные будильники -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
-    <queries>
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
-        </intent>
-    </queries>
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -29,10 +22,21 @@
             </intent-filter>
         </activity>
 
-        <!-- Наш приёмник для будильника -->
         <receiver
             android:name=".AlarmReceiver"
             android:exported="false" />
+
+        <!-- Наш виджет-кнопка -->
+        <receiver
+            android:name=".WidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
 
     </application>
 </manifest>
