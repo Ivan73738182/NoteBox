@@ -120,10 +120,22 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // ВРЕМЕННО: ПОКАЗ ЧЕРЕЗ 1 СЕКУНДУ
     LaunchedEffect(Unit) {
-        delay(1000)
-        showRateDialog = true
+        if (!repository.hasRated()) {
+            val firstLaunch = repository.getFirstLaunchTime()
+            val lastPrompt = repository.getLastRatePromptTime()
+            val now = System.currentTimeMillis()
+            val twoHours = 2 * 60 * 60 * 1000L
+            val oneWeek = 7 * 24 * 60 * 60 * 1000L
+
+            if (now - firstLaunch > twoHours) {
+                if (lastPrompt == 0L || now - lastPrompt > oneWeek) {
+                    delay(3000)
+                    showRateDialog = true
+                    repository.setLastRatePromptTime()
+                }
+            }
+        }
     }
 
     val activeNotes = notes.filter { !it.isDeleted }
@@ -145,8 +157,6 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
         ModalBottomSheet(onDismissRequest = { showRateDialog = false }, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
             Column(modifier = Modifier.padding(24.dp).padding(bottom = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Вам нравится NoteBox?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Поставьте оценку, чтобы мы стали лучше", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
