@@ -67,13 +67,27 @@ class NoteRepository(context: Context) {
     fun saveThemeMode(mode: Int) { prefs.edit().putInt("theme_mode", mode).apply() }
     fun isGridView(): Boolean = prefs.getBoolean("is_grid_view", false)
     fun saveGridView(isGrid: Boolean) { prefs.edit().putBoolean("is_grid_view", isGrid).apply() }
-
     fun getPinCode(): String = prefs.getString("pin_code", "") ?: ""
     fun savePinCode(pin: String) { prefs.edit().putString("pin_code", pin).apply() }
     fun getFontScale(): Float = prefs.getFloat("font_scale", 1.0f)
     fun saveFontScale(scale: Float) { prefs.edit().putFloat("font_scale", scale).apply() }
-
-    // НОВОЕ: Сортировка (0 - новые, 1 - старые, 2 - А-Я)
     fun getSortMode(): Int = prefs.getInt("sort_mode", 0)
     fun saveSortMode(mode: Int) { prefs.edit().putInt("sort_mode", mode).apply() }
+
+    // НОВЫЕ ФУНКЦИИ ДЛЯ ОЦЕНКИ
+    fun getFirstLaunchTime(): Long {
+        val time = prefs.getLong("first_launch_time", 0L)
+        if (time == 0L) {
+            val now = System.currentTimeMillis()
+            prefs.edit().putLong("first_launch_time", now).apply()
+            return now
+        }
+        return time
+    }
+
+    fun hasRated(): Boolean = prefs.getBoolean("has_rated", false)
+    fun setRated() { prefs.edit().putBoolean("has_rated", true).apply() }
+
+    fun getLastRatePromptTime(): Long = prefs.getLong("last_rate_prompt", 0L)
+    fun setLastRatePromptTime() { prefs.edit().putLong("last_rate_prompt", System.currentTimeMillis()).apply() }
 }

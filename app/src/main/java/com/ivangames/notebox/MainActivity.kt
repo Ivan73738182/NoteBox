@@ -62,6 +62,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val repository = NoteRepository(this)
+        repository.getFirstLaunchTime()
+        
         setContent {
             var themeMode by remember { mutableIntStateOf(repository.getThemeMode()) }
             var isUnlocked by remember { mutableStateOf(repository.getPinCode().isEmpty()) }
@@ -113,8 +115,29 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     var showAddMenu by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf(repository.getSortMode()) }
     
+    var showRateDialog by remember { mutableStateOf(false) }
+    var userRating by remember { mutableStateOf(0) }
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        if (!repository.hasRated()) {
+            val firstLaunch = repository.getFirstLaunchTime()
+            val lastPrompt = repository.getLastRatePromptTime()
+            val now = System.currentTimeMillis()
+            val twoHours = 2 * 60 * 60 * 1000L
+            val oneWeek = 7 * 24 * 60 * 60 * 1000L
+
+            if (now - firstLaunch > twoHours) {
+                if (lastPrompt == 0L || now - lastPrompt > oneWeek) {
+                    delay(3000)
+                    showRateDialog = true
+                    repository.setLastRatePromptTime()
+                }
+            }
+        }
+    }
 
     val activeNotes = notes.filter { !it.isDeleted }
     val sortedNotes = remember(activeNotes, sortMode) {
@@ -131,7 +154,52 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
         matchesSearch && matchesTag
     }
 
-    // МЕНЮ ВЫБОРА ТИПА ЗАМЕТКИ (+)
+    if (showRateDialog) {
+        ModalBottomSheet(onDismissRequest = { showRateDialog = false }, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+            Column(modifier = Modifier.padding(24.dp).padding(bottom = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Вам нравится NoteBox?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Поставьте оценку, чтобы мы стали лучше", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (1..5).forEach { i ->
+                        IconButton(onClick = { userRating = i }) {
+                            Icon(
+                                if (i <= userRating) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = "Оценка $i",
+                                tint = if (i <= userRating) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Выбрано: $userRating из 5", style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = { showRateDialog = false }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
+                        Text("Не сейчас")
+                    }
+                    Button(
+                        onClick = {
+                            repository.setRated()
+                            showRateDialog = false
+                            Toast.makeText(context, "Спасибо за оценку!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp),
+                        enabled = userRating > 0
+                    ) {
+                        Text("Отправить")
+                    }
+                }
+            }
+        }
+    }
+
     if (showAddMenu) {
         ModalBottomSheet(onDismissRequest = { showAddMenu = false }, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
             Column(modifier = Modifier.padding(16.dp).padding(bottom = 32.dp)) {
@@ -154,43 +222,29 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
         }
     }
 
-    // КРАСИВОЕ МЕНЮ ДЛЯ ДОЛГОГО НАЖАТИЯ
     if (longPressedNote != null) {
         ModalBottomSheet(onDismissRequest = { longPressedNote = null }, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
             Column(modifier = Modifier.padding(16.dp).padding(bottom = 32.dp)) {
                 Text(longPressedNote!!.title.ifBlank { "Без названия" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(16.dp))
-                
-                ListItem(
-                    headlineContent = { Text("Копировать текст") },
-                    leadingContent = { Icon(Icons.Default.ContentCopy, null, tint = MaterialTheme.colorScheme.primary) },
-                    modifier = Modifier.clickable { 
-                        val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cb.setPrimaryClip(ClipData.newPlainText("Note", longPressedNote!!.content))
-                        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
-                        longPressedNote = null 
-                    }
-                )
-                ListItem(
-                    headlineContent = { Text(if (longPressedNote!!.isPinned) "Открепить" else "Закрепить") },
-                    leadingContent = { Icon(Icons.Default.PushPin, null, tint = MaterialTheme.colorScheme.primary) },
-                    modifier = Modifier.clickable { 
-                        val n = longPressedNote!!
-                        notes = notes.map { if (it.id == n.id) it.copy(isPinned = !it.isPinned) else it }
-                        repository.saveNotes(notes)
-                        longPressedNote = null 
-                    }
-                )
-                ListItem(
-                    headlineContent = { Text("Удалить в корзину", color = MaterialTheme.colorScheme.error) },
-                    leadingContent = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                    modifier = Modifier.clickable { 
-                        val n = longPressedNote!!
-                        notes = notes.map { if (it.id == n.id) it.copy(isDeleted = true) else it }
-                        repository.saveNotes(notes)
-                        longPressedNote = null 
-                    }
-                )
+                ListItem(headlineContent = { Text("Копировать текст") }, leadingContent = { Icon(Icons.Default.ContentCopy, null, tint = MaterialTheme.colorScheme.primary) }, modifier = Modifier.clickable { 
+                    val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cb.setPrimaryClip(ClipData.newPlainText("Note", longPressedNote!!.content))
+                    Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                    longPressedNote = null 
+                })
+                ListItem(headlineContent = { Text(if (longPressedNote!!.isPinned) "Открепить" else "Закрепить") }, leadingContent = { Icon(Icons.Default.PushPin, null, tint = MaterialTheme.colorScheme.primary) }, modifier = Modifier.clickable { 
+                    val n = longPressedNote!!
+                    notes = notes.map { if (it.id == n.id) it.copy(isPinned = !it.isPinned) else it }
+                    repository.saveNotes(notes)
+                    longPressedNote = null 
+                })
+                ListItem(headlineContent = { Text("Удалить в корзину", color = MaterialTheme.colorScheme.error) }, leadingContent = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, modifier = Modifier.clickable { 
+                    val n = longPressedNote!!
+                    notes = notes.map { if (it.id == n.id) it.copy(isDeleted = true) else it }
+                    repository.saveNotes(notes)
+                    longPressedNote = null 
+                })
             }
         }
     }
