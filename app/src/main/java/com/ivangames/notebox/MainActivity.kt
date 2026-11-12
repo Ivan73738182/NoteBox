@@ -126,7 +126,7 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
             val firstLaunch = repository.getFirstLaunchTime()
             val lastPrompt = repository.getLastRatePromptTime()
             val now = System.currentTimeMillis()
-            val twoHours = 2 * 60 * 60 * 1000L
+            val twoHours = 20 * 1000L
             val oneWeek = 7 * 24 * 60 * 60 * 1000L
 
             if (now - firstLaunch > twoHours) {
