@@ -68,13 +68,10 @@ class MainActivity : ComponentActivity() {
             var themeMode by remember { mutableIntStateOf(repository.getThemeMode()) }
             var isUnlocked by remember { mutableStateOf(repository.getPinCode().isEmpty()) }
             val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-            LaunchedEffect(Unit) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
-
-            NoteBoxTheme(themeMode) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    if (!isUnlocked) LockScreen(repository, onUnlock = { isUnlocked = true })
-                    else NoteBoxApp(repository = repository, themeMode = themeMode, onThemeChange = { m -> themeMode = m; repository.saveThemeMode(m) })
-                }
+    LaunchedEffect(Unit) {
+        delay(1000)
+        showRateDialog = true
+    }
             }
         }
     }
@@ -122,19 +119,9 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        if (!repository.hasRated()) {
-            val firstLaunch = repository.getFirstLaunchTime()
-            val lastPrompt = repository.getLastRatePromptTime()
-            val now = System.currentTimeMillis()
-            val twoHours = 20 * 1000L
-            val oneWeek = 7 * 24 * 60 * 60 * 1000L
-
-            if (now - firstLaunch > twoHours) {
-                if (lastPrompt == 0L || now - lastPrompt > oneWeek) {
-                    delay(3000)
-                    showRateDialog = true
-                    repository.setLastRatePromptTime()
-                }
+        delay(1000)
+        showRateDialog = true
+    }
             }
         }
     }
@@ -311,15 +298,10 @@ fun NoteBoxApp(repository: NoteRepository, themeMode: Int, onThemeChange: (Int) 
                         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(filteredNotes, key = { it.id }) { note ->
                                 var visible by remember { mutableStateOf(false) }
-                                LaunchedEffect(Unit) { delay(50); visible = true }
-                                AnimatedVisibility(visible = visible, enter = fadeIn()) {
-                                    SwipeToDeleteContainer(onDelete = {
-                                        notes = notes.map { if (it.id == note.id) it.copy(isDeleted = true) else it }
-                                        repository.saveNotes(notes)
-                                        scope.launch {
-                                            val res = snackbarHostState.showSnackbar("В корзине", "Отменить", duration = SnackbarDuration.Short)
-                                            if (res == SnackbarResult.ActionPerformed) { notes = notes.map { if (it.id == note.id) it.copy(isDeleted = false) else it }; repository.saveNotes(notes) }
-                                        }
+    LaunchedEffect(Unit) {
+        delay(1000)
+        showRateDialog = true
+    }
                                     }) { NoteCard(note = note, onPin = { notes = notes.map { if (it.id == note.id) it.copy(isPinned = !it.isPinned) else it }; repository.saveNotes(notes) }, onClick = { currentEditingNote = note }, onLongClick = { longPressedNote = note }, isGrid = false, fontScale = fontScale) }
                                 }
                             }
